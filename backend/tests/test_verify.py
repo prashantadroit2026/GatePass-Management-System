@@ -35,7 +35,7 @@ def test_auth_expired_jwt_returns_401(api_client):
 def test_auth_deactivated_user_returns_403(api_client, auth_headers):
     resp = api_client.get("/api/v1/users/me", headers=auth_headers("deact"))
     assert resp.status_code == 403
-    assert resp.json()["detail"] == "User account is inactive"
+    assert resp.json()["message"] == "User account is inactive"
 
 
 # --- Users Tests ---
@@ -392,6 +392,93 @@ def test_validation_oversized_reason_returns_422(api_client, auth_headers):
     # Pass invalid payload schema to decision endpoint
     resp = api_client.post("/api/v1/requests/req-emp1-pending/reject", headers=auth_headers("hr"), json={})
     assert resp.status_code == 422
+
+
+# --- Phase 5: Expiry + Error Schema Tests ---
+
+def test_error_schema_401_has_code_and_message(api_client):
+    resp = api_client.get("/api/v1/users/me")
+    assert resp.status_code == 401
+    body = resp.json()
+    assert "code" in body
+    assert "message" in body
+    assert body["code"] == 401
+
+def test_error_schema_403_has_code_and_message(api_client, auth_headers):
+    resp = api_client.get("/api/v1/users/", headers=auth_headers("emp1"))
+    assert resp.status_code == 403
+    body = resp.json()
+    assert "code" in body
+    assert "message" in body
+    assert body["code"] == 403
+
+def test_error_schema_404_has_code_and_message(api_client, auth_headers):
+    resp = api_client.get("/api/v1/requests/does-not-exist", headers=auth_headers("emp1"))
+    assert resp.status_code == 404
+    body = resp.json()
+    assert "code" in body
+    assert "message" in body
+    assert body["code"] == 404
+
+def test_error_schema_422_has_code_and_message(api_client, auth_headers):
+    resp = api_client.post("/api/v1/requests/visitor", headers=auth_headers("emp1"), json={})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert "code" in body
+    assert "message" in body
+    assert body["code"] == 422
+
+def test_expire_stale_admin_returns_count(api_client, mock_db, auth_headers):
+    """Admin triggers expire: req-expired-1 (pending, past valid_until) gets expired."""
+    resp = api_client.post("/api/v1/admin/expire-stale", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "expired" in body
+    assert body["expired"] >= 1  # at least req-expired-1
+    # Verify status updated in mock_db
+    req = next((r for r in mock_db.tables["gatepass_requests"] if r["id"] == "req-expired-1"), None)
+    assert req is not None
+    assert req["status"] == "expired"
+
+def test_expire_stale_hr_returns_403(api_client, auth_headers):
+    resp = api_client.post("/api/v1/admin/expire-stale", headers=auth_headers("hr"))
+    assert resp.status_code == 403
+
+def test_expire_stale_employee_returns_403(api_client, auth_headers):
+    resp = api_client.post("/api/v1/admin/expire-stale", headers=auth_headers("emp1"))
+    assert resp.status_code == 403
+
+def test_expire_stale_unauthenticated_returns_401(api_client):
+    resp = api_client.post("/api/v1/admin/expire-stale")
+    assert resp.status_code == 401
+
+def test_expire_stale_no_stale_returns_zero(api_client, mock_db, auth_headers):
+    """If no pending requests are expired, returns 0."""
+    # Remove the one expired pending request from mock_db
+    mock_db.tables["gatepass_requests"] = [
+        r for r in mock_db.tables["gatepass_requests"] if r["id"] != "req-expired-1"
+    ]
+    resp = api_client.post("/api/v1/admin/expire-stale", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+    assert resp.json()["expired"] == 0
+
+def test_expire_stale_does_not_touch_approved(api_client, mock_db, auth_headers):
+    """Approved requests (even past valid_until) must NOT be expired."""
+    # Add an approved but expired-window request
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-approved-expired-window", "type": "leave", "status": "approved",
+        "requester_id": "u-emp1", "leave_type": "outing",
+        "valid_from": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+        "created_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+        "updated_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+    })
+    api_client.post("/api/v1/admin/expire-stale", headers=auth_headers("admin"))
+    req = next((r for r in mock_db.tables["gatepass_requests"] if r["id"] == "req-approved-expired-window"), None)
+    assert req is not None
+    assert req["status"] == "approved"  # must not be changed
+
 
 
 # --- Direct SQL DB Tests ---

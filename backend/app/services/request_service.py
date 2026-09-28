@@ -250,3 +250,33 @@ def cancel_request(request_id: str, user: dict, notes: str | None = None) -> dic
 
     res = supabase.table("gatepass_requests").update(update).eq("id", request_id).execute()
     return res.data[0]
+
+
+def expire_stale_requests() -> int:
+    """Set status='expired' on all pending requests whose valid_until < now.
+
+    Returns the count of expired records.
+    """
+    now = _now()
+
+    # Fetch all pending requests (MockSupabase doesn't support server-side
+    # datetime comparisons, so we filter in Python)
+    res = supabase.table("gatepass_requests").select("id,valid_until").eq("status", "pending").execute()
+    pending = res.data or []
+
+    expired_ids = []
+    for req in pending:
+        valid_until = _parse_iso(req.get("valid_until"))
+        if valid_until and valid_until < now:
+            expired_ids.append(req["id"])
+
+    if not expired_ids:
+        return 0
+
+    # Bulk-update each expired request (MockSupabase doesn't support IN-based
+    # bulk update, so update one by one; real Supabase can use .in_)
+    for req_id in expired_ids:
+        supabase.table("gatepass_requests").update({"status": "expired"}).eq("id", req_id).execute()
+
+    return len(expired_ids)
+
