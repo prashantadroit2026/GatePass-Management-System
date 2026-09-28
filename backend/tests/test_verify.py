@@ -266,6 +266,101 @@ def test_gate_non_security_returns_403(api_client, auth_headers):
     assert resp.status_code == 403
 
 
+# --- Phase 4: Accepted List Tests ---
+
+def test_accepted_list_employee_returns_403(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("emp1"))
+    assert resp.status_code == 403
+
+def test_accepted_list_vendor_returns_403(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("vendor"))
+    assert resp.status_code == 403
+
+def test_accepted_list_hr_returns_200(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("hr"))
+    assert resp.status_code == 200
+
+def test_accepted_list_security_returns_200(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("security"))
+    assert resp.status_code == 200
+
+def test_accepted_list_admin_returns_200(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+
+def test_accepted_list_contains_only_approved(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) > 0
+    for item in items:
+        # All returned items must be from the approved pool (status checked server-side)
+        assert item["id"] in ("req-approved-outing", "req-approved-full", "req-approved-visitor")
+
+def test_accepted_list_type_filter(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted?type=visitor", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    items = resp.json()
+    assert all(it["type"] == "visitor" for it in items)
+    assert any(it["id"] == "req-approved-visitor" for it in items)
+
+def test_accepted_list_next_movement_outing(api_client, auth_headers):
+    """Fresh outing request (0 logs) → next_movement = out"""
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    outing = next((it for it in resp.json() if it["id"] == "req-approved-outing"), None)
+    assert outing is not None
+    assert outing["next_movement"] == "out"
+
+def test_accepted_list_next_movement_visitor(api_client, auth_headers):
+    """Fresh visitor request (0 logs) → next_movement = in"""
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    visitor = next((it for it in resp.json() if it["id"] == "req-approved-visitor"), None)
+    assert visitor is not None
+    assert visitor["next_movement"] == "in"
+
+def test_accepted_list_next_movement_after_out_scan(api_client, mock_db, auth_headers):
+    """After OUT logged on outing → next_movement = in"""
+    # Log OUT first
+    api_client.post("/api/v1/gate/log", headers=auth_headers("security"),
+                    json={"request_id": "req-approved-outing", "direction": "out"})
+    resp = api_client.get("/api/v1/gate/accepted", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    outing = next((it for it in resp.json() if it["id"] == "req-approved-outing"), None)
+    assert outing is not None
+    assert outing["next_movement"] == "in"
+
+def test_accepted_list_search_filter(api_client, auth_headers):
+    """Search by visitor name"""
+    resp = api_client.get("/api/v1/gate/accepted?search=Bob", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) >= 1
+    assert any(it["visitor_name"] == "Bob" for it in items)
+
+def test_accepted_list_search_no_match(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted?search=ZZZNOMATCH999", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+def test_accepted_list_pagination_limit(api_client, auth_headers):
+    resp = api_client.get("/api/v1/gate/accepted?limit=1&offset=0", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    assert len(resp.json()) <= 1
+
+def test_accepted_list_pagination_offset(api_client, auth_headers):
+    """offset=999 → empty list"""
+    resp = api_client.get("/api/v1/gate/accepted?limit=50&offset=999", headers=auth_headers("security"))
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+def test_accepted_list_unauthenticated_returns_401(api_client):
+    resp = api_client.get("/api/v1/gate/accepted")
+    assert resp.status_code == 401
+    assert resp.headers.get("WWW-Authenticate") == "Bearer"
+
+
 # --- Race Test ---
 def test_race_10_concurrent_out_scans_exactly_one_201(api_client, auth_headers):
     req_id = "req-approved-outing"

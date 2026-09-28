@@ -136,3 +136,99 @@ def _notify_vendor_coming(request_id: str):
             "type": "vendor_coming",
             "related_id": request_id,
         }).execute()
+
+
+def _next_movement(req_type: str, leave_type: str | None, log_count: int) -> str | None:
+    """Return the expected next gate direction for an approved request."""
+    if req_type == "leave":
+        if leave_type == "full_leave":
+            return None if log_count >= 1 else "out"
+        else:  # outing
+            if log_count == 0:
+                return "out"
+            elif log_count == 1:
+                return "in"
+            else:
+                return None  # completed
+    elif req_type in ("visitor", "vendor"):
+        if log_count == 0:
+            return "in"
+        elif log_count == 1:
+            return "out"
+        else:
+            return None  # completed
+    return None
+
+
+def get_accepted_list(
+    req_type: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Return approved gatepass requests with next expected movement.
+
+    Filters:
+    - type: leave | visitor | vendor
+    - search: case-insensitive substring match on requester name, visitor name,
+              vendor company, or vendor item description
+
+    Each item gets a `next_movement` field: "in" | "out" | None (completed).
+    """
+    query = supabase.table("gatepass_requests").select("*").eq("status", "approved").order("valid_until", desc=False)
+    if req_type:
+        query = query.eq("type", req_type)
+
+    res = query.execute()
+    requests = res.data or []
+
+    # Resolve requester names in one pass
+    user_ids = list({r["requester_id"] for r in requests})
+    users_map: dict[str, str] = {}
+    if user_ids:
+        users_res = supabase.table("users").select("id,name").in_("id", user_ids).execute()
+        users_map = {u["id"]: u["name"] for u in (users_res.data or [])}
+
+    # Fetch all gate_logs for these requests at once
+    req_ids = [r["id"] for r in requests]
+    logs_by_req: dict[str, int] = {}
+    if req_ids:
+        logs_res = supabase.table("gate_logs").select("request_id").in_("request_id", req_ids).execute()
+        for log in (logs_res.data or []):
+            rid = log["request_id"]
+            logs_by_req[rid] = logs_by_req.get(rid, 0) + 1
+
+    result = []
+    for req in requests:
+        req_name = users_map.get(req["requester_id"], "")
+        nxt = _next_movement(req.get("type", ""), req.get("leave_type"), logs_by_req.get(req["id"], 0))
+
+        # Search filter (post-fetch since MockSupabase lacks ILIKE)
+        if search:
+            s = search.lower()
+            haystack = " ".join(filter(None, [
+                req_name,
+                req.get("visitor_name", ""),
+                req.get("vendor_company", ""),
+                req.get("vendor_item_description", ""),
+            ])).lower()
+            if s not in haystack:
+                continue
+
+        result.append({
+            "id": req["id"],
+            "type": req.get("type"),
+            "requester_id": req["requester_id"],
+            "requester_name": req_name or None,
+            "leave_type": req.get("leave_type"),
+            "visitor_name": req.get("visitor_name"),
+            "vendor_company": req.get("vendor_company"),
+            "vendor_item_description": req.get("vendor_item_description"),
+            "valid_from": req.get("valid_from"),
+            "valid_until": req.get("valid_until"),
+            "next_movement": nxt,
+        })
+
+    # Pagination
+    return result[offset: offset + limit]
+
