@@ -157,11 +157,27 @@ def list_requests_for_user(user: dict) -> list[dict]:
     return res.data or []
 
 
+def _parse_iso(dt_str: str | None) -> datetime | None:
+    if not dt_str:
+        return None
+    try:
+        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def approve_request(request_id: str, approver: dict, notes: str | None = None) -> dict:
     req = get_request(request_id)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot approve request in status: {req['status']}")
+
+    valid_until = _parse_iso(req.get("valid_until"))
+    if valid_until and valid_until < _now():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot approve request after its validity window has expired"
+        )
 
     requester = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute().data
     if not requester:
