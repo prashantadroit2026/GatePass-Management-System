@@ -1,0 +1,61 @@
+from app.db import supabase
+from app.schemas.user import UserCreate, UserUpdate
+from app.core.rbac import Role
+from fastapi import HTTPException, status
+
+
+def create_user(data: UserCreate) -> dict:
+    """Create user in Supabase Auth + public.users table"""
+    # 1. Create in Auth
+    auth_response = supabase.auth.admin.create_user({
+        "email": data.email,
+        "password": data.password,
+        "email_confirm": True,  # auto-confirm for now
+    })
+
+    if auth_response.user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create auth user"
+        )
+
+    user_id = auth_response.user.id
+
+    # 2. Insert into public.users
+    db_response = supabase.table("users").insert({
+        "id": user_id,
+        "name": data.name,
+        "email": data.email,
+        "role": data.role.value,
+    }).execute()
+
+    if not db_response.data:
+        # rollback auth user if public insert fails
+        supabase.auth.admin.delete_user(user_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create user profile"
+        )
+
+    return db_response.data[0]
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    return response.data
+
+
+def list_users() -> list[dict]:
+    response = supabase.table("users").select("*").order("created_at", desc=True).execute()
+    return response.data or []
+
+
+def update_user(user_id: str, data: UserUpdate) -> dict:
+    update_data = data.model_dump(exclude_unset=True)
+    if "role" in update_data and isinstance(update_data["role"], Role):
+        update_data["role"] = update_data["role"].value
+
+    response = supabase.table("users").update(update_data).eq("id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    return response.data[0]

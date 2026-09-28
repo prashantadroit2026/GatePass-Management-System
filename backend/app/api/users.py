@@ -1,0 +1,56 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.schemas.user import UserCreate, UserUpdate, UserOut
+from app.services import user_service
+from app.api.deps import get_current_user, require_permission
+from app.core.rbac import Permission
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+
+@router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    data: UserCreate,
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """
+    Create a new user (Admin or HR only).
+    Only Admin can create another Admin.
+    """
+    if data.role.value == "admin" and current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admin can create Admin accounts"
+        )
+
+    user = user_service.create_user(data)
+    return user
+
+
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Return the currently logged-in user"""
+    return current_user
+
+
+@router.get("/", response_model=list[UserOut])
+async def list_users(
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """List all users (Admin / HR)"""
+    return user_service.list_users()
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: str,
+    data: UserUpdate,
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """Update a user (Admin / HR)"""
+    # Prevent non-admin from changing role to admin
+    if data.role and data.role.value == "admin" and current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admin can assign Admin role"
+        )
+    return user_service.update_user(user_id, data)
