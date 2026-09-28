@@ -1,29 +1,100 @@
+from datetime import datetime, timezone
 from app.db import supabase
-from fastapi import HTTPException
+from fastapi import HTTPException, status
+
+
+def _parse_iso(dt_str: str | None) -> datetime | None:
+    if not dt_str:
+        return None
+    try:
+        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 def log_gate_movement(security_user: dict, data: dict) -> dict:
+    request_id = data["request_id"]
+    direction = data["direction"]
+    notes = data.get("notes")
+
+    # 1. Fetch request
+    req_res = supabase.table("gatepass_requests").select("*").eq("id", request_id).single().execute()
+    if not req_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gatepass request not found")
+    req = req_res.data
+
+    # 2. Reject if status is not approved
+    if req["status"] != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot log movement for request in '{req['status']}' status (must be 'approved')"
+        )
+
+    # 3. Check validity window
+    now = datetime.now(timezone.utc)
+    valid_from = _parse_iso(req.get("valid_from"))
+    valid_until = _parse_iso(req.get("valid_until"))
+
+    if valid_from and now < valid_from:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gatepass is not valid yet")
+    if valid_until and now > valid_until:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gatepass validity has expired")
+
+    # 4. Fetch existing logs to determine sequence
+    logs_res = supabase.table("gate_logs").select("*").eq("request_id", request_id).order("logged_at", desc=False).execute()
+    existing_logs = logs_res.data or []
+    log_count = len(existing_logs)
+
+    req_type = req.get("type")
+    leave_type = req.get("leave_type")
+
+    # Movement flow per type:
+    # Leave outing: OUT then IN (max 2)
+    # Leave full_leave: OUT only (max 1)
+    # Visitor: IN then OUT (max 2)
+    # Vendor: IN then OUT (max 2)
+    if req_type == "leave":
+        if leave_type == "full_leave":
+            if log_count >= 1:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Full leave gatepass already used (OUT completed)")
+            if direction != "out":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Full leave pass requires OUT movement")
+        else:
+            if log_count == 0:
+                if direction != "out":
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Outing pass requires OUT movement first")
+            elif log_count == 1:
+                if direction != "in":
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Outing pass already logged OUT; next movement must be IN")
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Outing pass is already completed (both OUT and IN logged)")
+    elif req_type in ("visitor", "vendor"):
+        if log_count == 0:
+            if direction != "in":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{req_type.capitalize()} pass requires IN movement first")
+        elif log_count == 1:
+            if direction != "out":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{req_type.capitalize()} pass already logged IN; next movement must be OUT")
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{req_type.capitalize()} pass is already completed (both IN and OUT logged)")
+
+    # 5. Insert gate log
     payload = {
-        "request_id": data["request_id"],
+        "request_id": request_id,
         "logged_by": security_user["id"],
-        "direction": data["direction"],
-        "notes": data.get("notes"),
+        "direction": direction,
+        "notes": notes,
     }
 
-    try:
-        res = supabase.table("gate_logs").insert(payload).execute()
-    except Exception as e:
-        # DB trigger will raise if not approved
-        raise HTTPException(status_code=400, detail=str(e))
-
+    res = supabase.table("gate_logs").insert(payload).execute()
     if not res.data:
-        raise HTTPException(status_code=400, detail="Failed to log gate movement")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to log gate movement")
 
     log = res.data[0]
 
-    # If direction is "in" and it's a vendor → notify relevant people
-    if data["direction"] == "in":
-        _notify_vendor_coming(data["request_id"])
+    # Notify if vendor arrives
+    if direction == "in" and req_type == "vendor":
+        _notify_vendor_coming(request_id)
 
     return log
 
