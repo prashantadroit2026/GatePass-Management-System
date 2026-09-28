@@ -47,10 +47,4 @@ async def update_user(
     current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
 ):
     """Update a user (Admin / HR)"""
-    # Prevent non-admin from changing role to admin
-    if data.role and data.role.value == "admin" and current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Admin can assign Admin role"
-        )
-    return user_service.update_user(user_id, data)
+    return user_service.update_user(user_id, data, current_user)

@@ -50,8 +50,59 @@ def list_users() -> list[dict]:
     return response.data or []
 
 
-def update_user(user_id: str, data: UserUpdate) -> dict:
+def update_user(user_id: str, data: UserUpdate, current_user: dict | None = None) -> dict:
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        return target_user
+
+    if current_user:
+        curr_id = current_user["id"]
+        curr_role = current_user["role"]
+
+        # No one can deactivate themselves
+        if "is_active" in update_data and update_data["is_active"] is False and curr_id == user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot deactivate own account"
+            )
+
+        # HR cannot modify, deactivate, or change role of any admin
+        if target_user["role"] == "admin" and curr_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="HR cannot modify or deactivate Admin accounts"
+            )
+
+        # Only admin can create or promote to admin
+        if "role" in update_data:
+            role_val = update_data["role"].value if isinstance(update_data["role"], Role) else update_data["role"]
+            if role_val == "admin" and curr_role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only Admin can assign Admin role"
+                )
+
+        # No one can deactivate or demote the last active admin
+        if target_user["role"] == "admin":
+            will_deactivate = "is_active" in update_data and update_data["is_active"] is False
+            new_role = update_data.get("role")
+            if isinstance(new_role, Role):
+                new_role = new_role.value
+            will_demote = new_role is not None and new_role != "admin"
+
+            if will_deactivate or will_demote:
+                admins_res = supabase.table("users").select("*").eq("role", "admin").eq("is_active", True).execute()
+                active_admins = admins_res.data or []
+                if len(active_admins) <= 1 and any(a["id"] == user_id for a in active_admins):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot deactivate or demote the last active admin"
+                    )
+
     if "role" in update_data and isinstance(update_data["role"], Role):
         update_data["role"] = update_data["role"].value
 
