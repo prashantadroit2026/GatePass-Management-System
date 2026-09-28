@@ -47,7 +47,7 @@ async def get_request(
     request_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    return request_service.get_request(request_id)
+    return request_service.get_request(request_id, current_user)
 
 
 # ---------- Decisions ----------

@@ -89,11 +89,36 @@ def create_vendor_request(requester: dict, data: dict) -> dict:
     return res.data[0]
 
 
-def get_request(request_id: str) -> dict:
+def get_request(request_id: str, current_user: dict | None = None) -> dict:
     res = supabase.table("gatepass_requests").select("*").eq("id", request_id).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Request not found")
-    return res.data
+    req = res.data
+
+    if current_user is not None:
+        user_id = current_user["id"]
+        role = current_user["role"]
+
+        if req["requester_id"] == user_id:
+            return req
+
+        if role == "admin":
+            return req
+
+        if role == "hr":
+            requester = supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute().data
+            if requester and requester.get("role") == "admin":
+                raise HTTPException(status_code=404, detail="Request not found")
+            return req
+
+        if role == "security":
+            if req.get("status") == "approved":
+                return req
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    return req
 
 
 def list_requests_for_user(user: dict) -> list[dict]:

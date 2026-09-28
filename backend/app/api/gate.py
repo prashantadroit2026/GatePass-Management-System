@@ -21,4 +21,4 @@ async def list_logs(
     request_id: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    return gate_service.list_gate_logs(request_id)
+    return gate_service.list_gate_logs(request_id, current_user)

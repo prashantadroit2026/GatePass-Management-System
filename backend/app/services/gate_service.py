@@ -28,10 +28,23 @@ def log_gate_movement(security_user: dict, data: dict) -> dict:
     return log
 
 
-def list_gate_logs(request_id: str | None = None) -> list[dict]:
+def list_gate_logs(request_id: str | None = None, current_user: dict | None = None) -> list[dict]:
+    if current_user and request_id:
+        from app.services.request_service import get_request
+        # This will raise 404 if current_user has no right to see this request
+        get_request(request_id, current_user)
+
     query = supabase.table("gate_logs").select("*").order("logged_at", desc=True)
     if request_id:
         query = query.eq("request_id", request_id)
+    elif current_user and current_user["role"] in ("employee", "vendor"):
+        # If no specific request_id, filter to own requests for regular users
+        own_reqs = supabase.table("gatepass_requests").select("id").eq("requester_id", current_user["id"]).execute()
+        req_ids = [r["id"] for r in (own_reqs.data or [])]
+        if not req_ids:
+            return []
+        query = query.in_("request_id", req_ids)
+
     res = query.execute()
     return res.data or []
 
