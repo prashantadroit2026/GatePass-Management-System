@@ -201,6 +201,7 @@ import app.services.user_service as _u_s
 import app.services.request_service as _r_s
 import app.services.gate_service as _g_s
 import app.services.notification_service as _n_s
+import app.services.reminder_service as _rem_s
 import app.api.deps as _deps_m
 
 TEST_DB_DSN = "host=127.0.0.1 port=5433 dbname=gatepass_test user=prashant"
@@ -213,6 +214,7 @@ def _patch_all(instance):
     _r_s.supabase = instance
     _g_s.supabase = instance
     _n_s.supabase = instance
+    _rem_s.supabase = instance
     _deps_m.supabase = instance
 
 

@@ -480,6 +480,170 @@ def test_expire_stale_does_not_touch_approved(api_client, mock_db, auth_headers)
     assert req["status"] == "approved"  # must not be changed
 
 
+# --- Phase 6: Reminders Tests ---
+
+def test_run_reminders_admin_returns_count(api_client, auth_headers):
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "reminders_sent" in body
+    assert isinstance(body["reminders_sent"], int)
+
+def test_run_reminders_hr_returns_403(api_client, auth_headers):
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("hr"))
+    assert resp.status_code == 403
+
+def test_run_reminders_employee_returns_403(api_client, auth_headers):
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("emp1"))
+    assert resp.status_code == 403
+
+def test_run_reminders_unauthenticated_returns_401(api_client):
+    resp = api_client.post("/api/v1/admin/run-reminders")
+    assert resp.status_code == 401
+
+def test_reminders_vendor_still_inside_sends_to_hr_and_admin(api_client, mock_db, auth_headers):
+    """After vendor IN logged, run-reminders notifies HR + Admin."""
+    # Log vendor IN
+    api_client.post("/api/v1/gate/log", headers=auth_headers("security"),
+                    json={"request_id": "req-approved-visitor", "direction": "in"})
+    # Actually use vendor request — need one
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-vendor-inside", "type": "vendor", "status": "approved",
+        "requester_id": "u-vendor", "vendor_item_direction": "in",
+        "vendor_item_description": "Cables", "vendor_company": "ACME",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    # Log IN for vendor request
+    mock_db.tables["gate_logs"].append({
+        "id": "gl-vendor-in", "request_id": "req-vendor-inside",
+        "logged_by": "u-sec", "direction": "in",
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    before_count = len(mock_db.tables["notifications"])
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+    assert resp.json()["reminders_sent"] >= 1
+
+    # Check HR got notified
+    new_notifs = mock_db.tables["notifications"][before_count:]
+    hr_notif = [n for n in new_notifs if n["user_id"] == "u-hr" and n["type"] == "vendor_still_inside"]
+    assert len(hr_notif) >= 1
+
+def test_reminders_dedup_no_double_send(api_client, mock_db, auth_headers):
+    """Running reminders twice does not create duplicate notifications."""
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-vendor-dup", "type": "vendor", "status": "approved",
+        "requester_id": "u-vendor", "vendor_item_description": "x",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mock_db.tables["gate_logs"].append({
+        "id": "gl-dup-in", "request_id": "req-vendor-dup",
+        "logged_by": "u-sec", "direction": "in",
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    resp1 = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    count1 = resp1.json()["reminders_sent"]
+
+    resp2 = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    count2 = resp2.json()["reminders_sent"]
+
+    assert count2 == 0, f"Dedup failed: second run sent {count2} (first={count1})"
+
+def test_reminders_pass_expiring_soon_notifies_requester(api_client, mock_db, auth_headers):
+    """Approved req expiring within 2h → requester notified."""
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-expiring-soon", "type": "leave", "status": "approved",
+        "requester_id": "u-emp1", "leave_type": "outing",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    before = len(mock_db.tables["notifications"])
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+    assert resp.json()["reminders_sent"] >= 1
+
+    new_notifs = mock_db.tables["notifications"][before:]
+    expiry_notif = [n for n in new_notifs
+                    if n["user_id"] == "u-emp1" and n["type"] == "pass_expiring_soon"]
+    assert len(expiry_notif) >= 1
+
+def test_reminders_pending_too_long_notifies_hr(api_client, mock_db, auth_headers):
+    """Employee pending >4h → HR notified."""
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-emp-stale", "type": "leave", "status": "pending",
+        "requester_id": "u-emp1", "leave_type": "outing",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+        "updated_at": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+    })
+
+    before = len(mock_db.tables["notifications"])
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+
+    new_notifs = mock_db.tables["notifications"][before:]
+    hr_pending = [n for n in new_notifs
+                  if n["user_id"] == "u-hr" and n["type"] == "pending_too_long"]
+    assert len(hr_pending) >= 1
+
+def test_reminders_pending_hr_too_long_notifies_admin(api_client, mock_db, auth_headers):
+    """HR pending >4h → Admin notified."""
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-hr-stale", "type": "leave", "status": "pending",
+        "requester_id": "u-hr", "leave_type": "outing",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+        "updated_at": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+    })
+
+    before = len(mock_db.tables["notifications"])
+    resp = api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+    assert resp.status_code == 200
+
+    new_notifs = mock_db.tables["notifications"][before:]
+    admin_pending = [n for n in new_notifs
+                     if n["user_id"] == "u-admin" and n["type"] == "pending_too_long"]
+    assert len(admin_pending) >= 1
+
+def test_reminders_fresh_pending_not_notified(api_client, mock_db, auth_headers):
+    """Pending req <4h old → NO reminder sent."""
+    from datetime import datetime, timezone, timedelta
+    mock_db.tables["gatepass_requests"].append({
+        "id": "req-emp-fresh", "type": "leave", "status": "pending",
+        "requester_id": "u-emp1", "leave_type": "outing",
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        "updated_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+    })
+
+    before = len(mock_db.tables["notifications"])
+    api_client.post("/api/v1/admin/run-reminders", headers=auth_headers("admin"))
+
+    new_notifs = mock_db.tables["notifications"][before:]
+    fresh_notifs = [n for n in new_notifs
+                    if n.get("related_id") == "req-emp-fresh"]
+    assert fresh_notifs == [], f"Unexpected reminders for fresh request: {fresh_notifs}"
+
+
 
 # --- Direct SQL DB Tests ---
 def test_db_sql_fake_request_id_fk_error(db_conn):
