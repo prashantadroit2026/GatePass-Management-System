@@ -20,7 +20,6 @@ class Permission(str, Enum):
     VIEW_ACCEPTED_LIST = "view_accepted_list"
     LOG_GATE_MOVEMENT = "log_gate_movement"
     VIEW_ALL_REQUESTS = "view_all_requests"
-    SELF_APPROVE = "self_approve"  # Admin only
 
 
 # Permission matrix
@@ -44,14 +43,11 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.VIEW_ALL_REQUESTS,  # except Admin requests
     },
     Role.ADMIN: {
-        Permission.CREATE_LEAVE_REQUEST,
-        Permission.CREATE_VISITOR_REQUEST,
-        Permission.APPROVE_REJECT_REQUEST,  # HR only + self
+        Permission.APPROVE_REJECT_REQUEST,  # HR only
         Permission.CANCEL_REQUEST,
         Permission.MANAGE_USER_ACCOUNTS,
         Permission.VIEW_ACCEPTED_LIST,
         Permission.VIEW_ALL_REQUESTS,  # full
-        Permission.SELF_APPROVE,  # explicit exception
     },
     Role.SECURITY: {
         Permission.VIEW_ACCEPTED_LIST,
@@ -66,7 +62,3 @@ def has_permission(role: str | Role, permission: Permission) -> bool:
         return permission in ROLE_PERMISSIONS.get(role_enum, set())
     except ValueError:
         return False
-
-
-def can_self_approve(role: str | Role) -> bool:
-    return has_permission(role, Permission.SELF_APPROVE)

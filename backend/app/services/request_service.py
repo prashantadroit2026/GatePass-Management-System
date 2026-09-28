@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 from app.db import supabase
-from app.core.rbac import can_self_approve
 from app.services import notification_service
 from fastapi import HTTPException, status
 
@@ -14,6 +13,33 @@ def _calculate_validity(req_type: str, leave_days: int | None = None) -> tuple[d
     if req_type == "leave" and leave_days:
         return now, now + timedelta(days=leave_days)
     return now, now + timedelta(hours=24)
+
+
+def can_decide(approver: dict, requester: dict) -> None:
+    if approver["id"] == requester["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-approval or self-rejection is not allowed"
+        )
+    req_role = requester.get("role")
+    appr_role = approver.get("role")
+    if req_role == "hr":
+        if appr_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="HR requests can only be approved or rejected by Admin"
+            )
+    elif req_role in ("employee", "vendor"):
+        if appr_role != "hr":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Employee and vendor requests can only be approved or rejected by HR"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to approve or reject this request"
+        )
 
 
 def create_leave_request(requester: dict, data: dict) -> dict:
@@ -30,11 +56,6 @@ def create_leave_request(requester: dict, data: dict) -> dict:
         "valid_from": valid_from.isoformat(),
         "valid_until": valid_until.isoformat(),
     }
-
-    if can_self_approve(requester["role"]):
-        payload["status"] = "approved"
-        payload["approver_id"] = requester["id"]
-        payload["decided_at"] = _now().isoformat()
 
     res = supabase.table("gatepass_requests").insert(payload).execute()
     if not res.data:
@@ -56,11 +77,6 @@ def create_visitor_request(requester: dict, data: dict) -> dict:
         "valid_from": valid_from.isoformat(),
         "valid_until": valid_until.isoformat(),
     }
-
-    if can_self_approve(requester["role"]):
-        payload["status"] = "approved"
-        payload["approver_id"] = requester["id"]
-        payload["decided_at"] = _now().isoformat()
 
     res = supabase.table("gatepass_requests").insert(payload).execute()
     if not res.data:
@@ -147,13 +163,11 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot approve request in status: {req['status']}")
 
-    requester = supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute().data
-    requester_role = requester["role"] if requester else None
+    requester = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute().data
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
 
-    if approver["role"] == "hr" and requester_role == "admin":
-        raise HTTPException(status_code=403, detail="HR cannot approve Admin requests")
-    if approver["role"] not in ("hr", "admin"):
-        raise HTTPException(status_code=403, detail="Only HR or Admin can approve")
+    can_decide(approver, requester)
 
     update = {
         "status": "approved",
@@ -177,6 +191,12 @@ def reject_request(request_id: str, approver: dict, reason: str) -> dict:
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot reject request in status: {req['status']}")
+
+    requester = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute().data
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    can_decide(approver, requester)
 
     update = {
         "status": "rejected",
