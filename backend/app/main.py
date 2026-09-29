@@ -5,15 +5,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api import users, requests, gate, notifications, admin
 
+from app.config import settings
+
 app = FastAPI(
     title="Gatepass Management System",
     description="RBAC-based Gate Pass API",
     version="0.4.0",
 )
 
+origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins if origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
