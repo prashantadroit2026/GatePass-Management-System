@@ -1,0 +1,27 @@
+# Dependencies & Virtual Envs
+.venv/
+venv/
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python caches & build
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Archives & Temporary files
+*.zip
+*.tar.gz
+*.log

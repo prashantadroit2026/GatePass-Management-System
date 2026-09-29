@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #1d2328;
+  --color-signal: #f2b705;
+  --color-paper: #f5f6f7;
+  --font-sans: "Barlow", system-ui, sans-serif;
+}
+
+body { background: var(--color-paper); color: var(--color-ink); }
+
+@utility btn {
+  @apply inline-flex items-center gap-1.5 rounded border border-ink/25 bg-white px-3 py-1.5 text-sm font-medium hover:bg-ink/5 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink;
+}
+@utility btn-primary {
+  @apply btn border-ink bg-ink text-white hover:bg-ink/85;
+}
+@utility btn-danger {
+  @apply btn border-red-700 text-red-700 hover:bg-red-50;
+}
+@utility input {
+  @apply w-full rounded border border-ink/25 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-signal;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium;
+}
