@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #1d2328;
-  --color-signal: #f2b705;
-  --color-paper: #f5f6f7;
-  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-muted: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-subtle: #64748b;
+
+  --color-primary: #4f46e5;
+  --color-primary-strong: #4338ca;
+  --color-primary-soft: #eef2ff;
+
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #e11d48;
+
+  --radius-card: 0.9rem;
 }
 
-body { background: var(--color-paper); color: var(--color-ink); }
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 
-@utility btn {
-  @apply inline-flex items-center gap-1.5 rounded border border-ink/25 bg-white px-3 py-1.5 text-sm font-medium hover:bg-ink/5 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink;
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: #c7d2fe;
+    color: #312e81;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
-@utility btn-primary {
-  @apply btn border-ink bg-ink text-white hover:bg-ink/85;
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
-@utility btn-danger {
-  @apply btn border-red-700 text-red-700 hover:bg-red-50;
+
+@utility field-input {
+  @apply w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-slate-400 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500;
 }
-@utility input {
-  @apply w-full rounded border border-ink/25 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-signal;
+
+@utility field-label {
+  @apply mb-1.5 block text-sm font-medium text-slate-700;
 }
-@utility label {
-  @apply mb-1 block text-sm font-medium;
+
+@utility card-shell {
+  @apply rounded-[var(--radius-card)] border border-border bg-card shadow-sm;
+}
+
+@utility kiosk-btn {
+  @apply inline-flex min-h-14 items-center justify-center gap-2 rounded-xl px-6 text-base font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
 }
