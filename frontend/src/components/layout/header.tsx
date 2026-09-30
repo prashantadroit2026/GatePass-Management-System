@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarDays, LogOut, Menu, RotateCcw, ShieldCheck } from "lucide-react";
+import { CalendarDays, LogOut, Menu, RotateCcw } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -29,9 +30,14 @@ export function Header({ onMenuOpen }: { onMenuOpen: () => void }) {
         </button>
 
         <Link href={roleHome} className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
-            <ShieldCheck className="h-5 w-5" aria-hidden />
-          </span>
+          <Image
+            src="/logo.png"
+            alt={`${ORG_NAME} logo`}
+            width={203}
+            height={110}
+            priority
+            className="h-9 w-auto"
+          />
           <span className="hidden leading-tight sm:block">
             <span className="block text-[15px] font-semibold tracking-tight text-slate-900">{APP_NAME}</span>
             <span className="block text-[11px] text-slate-500">{ORG_NAME}</span>

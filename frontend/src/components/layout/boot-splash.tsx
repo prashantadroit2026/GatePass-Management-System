@@ -1,15 +1,15 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import Image from "next/image";
 
 /** Full-screen branded splash shown while the demo state boots and during role redirects. */
 export function BootSplash() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 px-6 text-white">
       <div className="relative">
-        <div className="absolute inset-0 animate-ping rounded-full bg-indigo-500/30" aria-hidden />
-        <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/40">
-          <ShieldCheck className="h-9 w-9 text-white" aria-hidden />
+        <div className="absolute inset-0 animate-ping rounded-2xl bg-indigo-500/30" aria-hidden />
+        <div className="relative rounded-2xl bg-white p-3 shadow-xl shadow-indigo-500/20">
+          <Image src="/logo.png" alt="" width={203} height={110} priority className="h-14 w-auto" />
         </div>
       </div>
       <div className="text-center">
