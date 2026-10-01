@@ -54,7 +54,7 @@ export function GatePassForm() {
     }
   }, [employeeId, users]);
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const next: Record<string, string> = {};
     if (!lookup.profile) next.employeeId = "Enter a valid employee ID";
@@ -69,8 +69,8 @@ export function GatePassForm() {
     }
 
     setBusy(true);
-    window.setTimeout(() => {
-      const createdRequest = createRequest({
+    try {
+      const createdRequest = await createRequest({
         type: "employee",
         mode,
         date,
@@ -79,13 +79,16 @@ export function GatePassForm() {
         purpose: reason.trim(),
         requester: lookup.profile as EmployeeRef,
       });
-      setBusy(false);
       setCreated(createdRequest);
       setReason("");
       toast.success(`Gate pass ${createdRequest.id} submitted`, {
         description: "HR will review it — track the status under My Requests.",
       });
-    }, 600);
+    } catch (err: unknown) {
+      toast.error("Failed to submit request", { description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (created) {

@@ -38,10 +38,18 @@ class VisitorCreate(BaseModel):
 
 
 class VendorCreate(BaseModel):
-    vendor_item_direction: ItemDirection
-    vendor_item_description: str
+    vendor_item_direction: Optional[ItemDirection] = ItemDirection.IN
+    vendor_item_description: Optional[str] = None
     vendor_company: Optional[str] = None
     notes: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    arrival_date: Optional[str] = None
+    time_slot: Optional[str] = None
+    host_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    purpose: Optional[str] = None
 
 
 # ---------- Decision schemas ----------
@@ -62,7 +70,7 @@ class RequestOut(BaseModel):
     id: str
     type: RequestType
     status: RequestStatus
-    requester_id: str
+    requester_id: Optional[str] = None
     approver_id: Optional[str] = None
     decided_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None

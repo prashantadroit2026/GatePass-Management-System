@@ -78,5 +78,5 @@ export const REQUEST_TYPE_META: Record<RequestType, { label: string; short: stri
   vendor: { label: "Vendor Arrival", short: "Vendor", prefix: "VND" },
 };
 
-export const ORG_NAME = "Acme Industries";
+export const ORG_NAME = "Adroit X Signet";
 export const APP_NAME = "GatePass";

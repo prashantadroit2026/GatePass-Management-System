@@ -88,11 +88,11 @@ export function VendorScheduleForm() {
 
   const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
-  const submit = () => {
+  const submit = async () => {
     if (!validateStep(2)) return;
     setBusy(true);
-    window.setTimeout(() => {
-      const request = createRequest({
+    try {
+      const request = await createRequest({
         type: "vendor",
         date: form.date,
         timeSlot: form.timeSlot,
@@ -111,10 +111,13 @@ export function VendorScheduleForm() {
           company: form.company.trim(),
         },
       });
-      setBusy(false);
       toast.success(`Pass ${request.id} created`, { description: "Showing your digital pass receipt." });
       router.push(`/vendor/pass/${encodeURIComponent(request.id)}`);
-    }, 700);
+    } catch (err: unknown) {
+      toast.error("Failed to schedule arrival", { description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -185,7 +188,7 @@ export function VendorScheduleForm() {
                   </Select>
                 </Field>
               </div>
-              <Field label="Host employee" htmlFor="vd-host" required error={errors.host} hint="Start typing to pick an Acme employee">
+              <Field label="Host employee" htmlFor="vd-host" required error={errors.host} hint="Start typing to pick an Adroit X Signet employee">
                 <div className="relative">
                   <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
                   <Input

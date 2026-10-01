@@ -4,12 +4,14 @@ import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { useApp } from "@/context/app-context";
+import { useAuth } from "@/context/auth-context";
+import { AppProvider, useApp } from "@/context/app-context";
 import { ROLE_META } from "@/lib/constants";
 import { NAV } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { Header } from "@/components/layout/header";
 import { MobileNavDrawer, SideNav } from "@/components/layout/side-nav";
+import { BootSplash } from "@/components/layout/boot-splash";
 
 function PublicNav() {
   const pathname = usePathname();
@@ -46,19 +48,21 @@ function RedirectPanel({ label }: { label: string }) {
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
       <Loader2 className="h-7 w-7 animate-spin text-indigo-600" aria-hidden />
       <p className="text-sm font-medium text-slate-700">Opening the {label} workspace…</p>
-      <p className="text-xs text-slate-400">Role switched — routes are updating.</p>
+      <p className="text-xs text-slate-400">Redirecting…</p>
     </div>
   );
 }
 
-export default function ConsoleLayout({ children }: { children: ReactNode }) {
+/** Inner layout — has access to AppContext */
+function ConsoleInner({ children }: { children: ReactNode }) {
   const { role, roleHome, roleLabel } = useApp();
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const isVendor = pathname.startsWith("/vendor");
   const pathArea = pathname.split("/")[1] ?? "";
-  const mismatch = pathArea !== ROLE_META[role].area;
+  const mismatch = !isVendor && pathArea !== ROLE_META[role].area;
 
   useEffect(() => {
     if (mismatch) router.replace(roleHome);
@@ -68,12 +72,12 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
   }, [pathname]);
 
-  const showSidebar = role === "admin" || role === "employee";
+  const showSidebar = !isVendor && (role === "admin" || role === "employee");
 
   return (
     <div className="min-h-screen">
       <Header onMenuOpen={() => setDrawerOpen(true)} />
-      {role === "vendor" ? <PublicNav /> : null}
+      {isVendor || role === "vendor" ? <PublicNav /> : null}
 
       <div className="flex">
         {showSidebar ? (
@@ -83,11 +87,37 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
         ) : null}
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
-          <div className="mx-auto w-full max-w-7xl">{mismatch ? <RedirectPanel label={roleLabel} /> : children}</div>
+          <div className="mx-auto w-full max-w-7xl">
+            {mismatch ? <RedirectPanel label={roleLabel} /> : children}
+          </div>
         </main>
       </div>
 
       <MobileNavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
+  );
+}
+
+export default function ConsoleLayout({ children }: { children: ReactNode }) {
+  const { ready, profile } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const isVendorRoute = pathname.startsWith("/vendor");
+
+  // Auth guard — redirect to login if not authenticated (vendor routes are public)
+  useEffect(() => {
+    if (ready && !profile && !isVendorRoute) {
+      router.replace("/login");
+    }
+  }, [ready, profile, router, isVendorRoute]);
+
+  if (!ready && !isVendorRoute) return <BootSplash />;
+  if (!profile && !isVendorRoute) return <BootSplash />;
+
+  return (
+    <AppProvider>
+      <ConsoleInner>{children}</ConsoleInner>
+    </AppProvider>
   );
 }

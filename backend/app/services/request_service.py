@@ -15,13 +15,23 @@ def _calculate_validity(req_type: str, leave_days: int | None = None) -> tuple[d
     return now, now + timedelta(hours=24)
 
 
-def can_decide(approver: dict, requester: dict) -> None:
-    if approver["id"] == requester["id"]:
+def _get_default_system_user_id() -> str | None:
+    try:
+        res = supabase.table("users").select("id").limit(1).execute()
+        if res.data:
+            return res.data[0]["id"]
+    except Exception:
+        pass
+    return None
+
+
+def can_decide(approver: dict, requester: dict | None) -> None:
+    if requester and approver["id"] == requester["id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-approval or self-rejection is not allowed"
         )
-    req_role = requester.get("role")
+    req_role = requester.get("role") if requester else "vendor"
     appr_role = approver.get("role")
     if req_role == "hr":
         if appr_role != "admin":
@@ -29,17 +39,18 @@ def can_decide(approver: dict, requester: dict) -> None:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="HR requests can only be approved or rejected by Admin"
             )
-    elif req_role in ("employee", "vendor"):
-        if appr_role != "hr":
+    elif req_role in ("employee", "vendor") or req_role is None:
+        if appr_role not in ("hr", "admin"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Employee and vendor requests can only be approved or rejected by HR"
+                detail="Employee and vendor requests can only be approved or rejected by HR or Admin"
             )
     else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to approve or reject this request"
-        )
+        if appr_role not in ("hr", "admin"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to approve or reject this request"
+            )
 
 
 def create_leave_request(requester: dict, data: dict) -> dict:
@@ -84,57 +95,96 @@ def create_visitor_request(requester: dict, data: dict) -> dict:
     return res.data[0]
 
 
-def create_vendor_request(requester: dict, data: dict) -> dict:
+def create_vendor_request(requester: dict | None, data: dict) -> dict:
     valid_from, valid_until = _calculate_validity("vendor")
+
+    requester_id = requester["id"] if requester else None
+    notes = data.get("notes")
+
+    # Serialize extra scheduling fields if provided
+    extra = {}
+    for k in ("contact_name", "contact_email", "contact_phone", "arrival_date", "time_slot", "host_name", "vehicle_number"):
+        if data.get(k):
+            extra[k] = data[k]
+
+    if not notes and extra:
+        import json
+        notes = json.dumps(extra)
+
+    item_direction = data.get("vendor_item_direction") or "in"
+    item_description = data.get("vendor_item_description") or data.get("purpose") or "Vendor visit"
 
     payload = {
         "type": "vendor",
         "status": "pending",
-        "requester_id": requester["id"],
-        "vendor_item_direction": data["vendor_item_direction"],
-        "vendor_item_description": data["vendor_item_description"],
+        "requester_id": requester_id,
+        "vendor_item_direction": item_direction,
+        "vendor_item_description": item_description,
         "vendor_company": data.get("vendor_company"),
-        "notes": data.get("notes"),
+        "notes": notes,
         "valid_from": valid_from.isoformat(),
         "valid_until": valid_until.isoformat(),
     }
 
-    res = supabase.table("gatepass_requests").insert(payload).execute()
+    try:
+        res = supabase.table("gatepass_requests").insert(payload).execute()
+    except Exception as e:
+        if requester_id is None:
+            sys_id = _get_default_system_user_id()
+            if sys_id:
+                payload["requester_id"] = sys_id
+                res = supabase.table("gatepass_requests").insert(payload).execute()
+            else:
+                raise e
+        else:
+            raise e
+
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to create vendor request")
     return res.data[0]
 
 
 def get_request(request_id: str, current_user: dict | None = None) -> dict:
-    res = supabase.table("gatepass_requests").select("*").eq("id", request_id).single().execute()
+    try:
+        res = supabase.table("gatepass_requests").select("*").eq("id", request_id).execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Request not found")
+
     if not res.data:
         raise HTTPException(status_code=404, detail="Request not found")
-    req = res.data
+    req = res.data[0]
 
-    if current_user is not None:
-        user_id = current_user["id"]
-        role = current_user["role"]
-
-        if req["requester_id"] == user_id:
+    if current_user is None:
+        # Public access allowed for vendor passes
+        if req.get("type") == "vendor":
             return req
+        raise HTTPException(status_code=401, detail="Authentication required")
 
-        if role == "admin":
-            return req
+    user_id = current_user["id"]
+    role = current_user["role"]
 
-        if role == "hr":
+    if req.get("requester_id") == user_id:
+        return req
+
+    if role == "admin":
+        return req
+
+    if role == "hr":
+        if req.get("requester_id"):
             requester = supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute().data
             if requester and requester.get("role") == "admin":
                 raise HTTPException(status_code=404, detail="Request not found")
+        return req
+
+    if role == "security":
+        if req.get("status") == "approved":
             return req
-
-        if role == "security":
-            if req.get("status") == "approved":
-                return req
-            raise HTTPException(status_code=404, detail="Request not found")
-
         raise HTTPException(status_code=404, detail="Request not found")
 
-    return req
+    if req.get("type") == "vendor":
+        return req
+
+    raise HTTPException(status_code=404, detail="Request not found")
 
 
 def list_requests_for_user(user: dict) -> list[dict]:
@@ -167,7 +217,7 @@ def _parse_iso(dt_str: str | None) -> datetime | None:
 
 
 def approve_request(request_id: str, approver: dict, notes: str | None = None) -> dict:
-    req = get_request(request_id)
+    req = get_request(request_id, approver)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot approve request in status: {req['status']}")
@@ -179,8 +229,15 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
             detail="Cannot approve request after its validity window has expired"
         )
 
-    requester = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute().data
-    if not requester:
+    requester = None
+    if req.get("requester_id"):
+        try:
+            req_res = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute()
+            requester = req_res.data
+        except Exception:
+            requester = None
+
+    if req.get("type") != "vendor" and not requester:
         raise HTTPException(status_code=404, detail="Requester not found")
 
     can_decide(approver, requester)
@@ -196,20 +253,30 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
     res = supabase.table("gatepass_requests").update(update).eq("id", request_id).execute()
     updated = res.data[0]
 
-    # Send notification
-    notification_service.notify_approval(updated, approver.get("name", "Approver"))
+    # Send notification if requester exists
+    try:
+        notification_service.notify_approval(updated, approver.get("name", "Approver"))
+    except Exception:
+        pass
 
     return updated
 
 
 def reject_request(request_id: str, approver: dict, reason: str) -> dict:
-    req = get_request(request_id)
+    req = get_request(request_id, approver)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot reject request in status: {req['status']}")
 
-    requester = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute().data
-    if not requester:
+    requester = None
+    if req.get("requester_id"):
+        try:
+            req_res = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute()
+            requester = req_res.data
+        except Exception:
+            requester = None
+
+    if req.get("type") != "vendor" and not requester:
         raise HTTPException(status_code=404, detail="Requester not found")
 
     can_decide(approver, requester)
@@ -224,21 +291,24 @@ def reject_request(request_id: str, approver: dict, reason: str) -> dict:
     updated = res.data[0]
 
     # Send notification
-    notification_service.notify_rejection(updated, reason, approver.get("name", "Approver"))
+    try:
+        notification_service.notify_rejection(updated, reason, approver.get("name", "Approver"))
+    except Exception:
+        pass
 
     return updated
 
 
 def cancel_request(request_id: str, user: dict, notes: str | None = None) -> dict:
-    req = get_request(request_id)
+    req = get_request(request_id, user)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail="Only pending requests can be cancelled")
 
-    is_requester = req["requester_id"] == user["id"]
+    is_requester = req.get("requester_id") == user["id"]
     is_approver_role = user["role"] in ("hr", "admin")
 
-    if not (is_requester or is_approver_role):
+    if not (is_requester or is_approver_role or req.get("type") == "vendor"):
         raise HTTPException(status_code=403, detail="Not allowed to cancel this request")
 
     update = {

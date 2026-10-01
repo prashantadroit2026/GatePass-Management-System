@@ -4,7 +4,7 @@ from app.schemas.request import (
     ApproveRequest, RejectRequest, CancelRequest, RequestOut
 )
 from app.services import request_service
-from app.api.deps import get_current_user, require_permission
+from app.api.deps import get_current_user, get_optional_current_user, require_permission
 from app.core.rbac import Permission
 
 router = APIRouter(prefix="/requests", tags=["Requests"])
@@ -30,8 +30,9 @@ async def create_visitor(
 @router.post("/vendor", response_model=RequestOut, status_code=status.HTTP_201_CREATED)
 async def create_vendor(
     data: VendorCreate,
-    current_user: dict = Depends(require_permission(Permission.CREATE_VENDOR_ENTRY_REQUEST)),
+    current_user: dict | None = Depends(get_optional_current_user),
 ):
+    """Create vendor gatepass request (public self-service or authenticated)"""
     return request_service.create_vendor_request(current_user, data.model_dump())
 
 
@@ -45,8 +46,9 @@ async def list_requests(current_user: dict = Depends(get_current_user)):
 @router.get("/{request_id}", response_model=RequestOut)
 async def get_request(
     request_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_current_user),
 ):
+    """Retrieve pass by ID (public for vendor passes, auth required for internal)"""
     return request_service.get_request(request_id, current_user)
 
 

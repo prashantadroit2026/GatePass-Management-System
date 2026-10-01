@@ -108,6 +108,16 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict | None:
+    """Validate Supabase JWT if present; return None if unauthenticated or invalid"""
+    if credentials is None or not credentials.credentials:
+        return None
+    try:
+        return await get_current_user(credentials)
+    except HTTPException:
+        return None
 
 
 def require_permission(permission: Permission):
@@ -124,3 +134,4 @@ def require_permission(permission: Permission):
 
 # Convenient typed dependency
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+

@@ -15,11 +15,15 @@ export function GateCard({ request }: { request: GateRequest }) {
   const onPremises = request.attendance === "on_premises";
   const departed = request.attendance === "departed";
 
-  const move = (kind: "check_in" | "check_out") => {
-    recordGateMovement(request.id, kind);
-    toast.success(`${kind === "check_in" ? "Check-in" : "Check-out"} recorded`, {
-      description: `${request.id} · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
-    });
+  const move = async (kind: "check_in" | "check_out") => {
+    try {
+      await recordGateMovement(request.id, kind);
+      toast.success(`${kind === "check_in" ? "Check-in" : "Check-out"} recorded`, {
+        description: `${request.id} · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+      });
+    } catch (err: unknown) {
+      toast.error("Gate action failed", { description: err instanceof Error ? err.message : "Unknown error" });
+    }
   };
 
   return (

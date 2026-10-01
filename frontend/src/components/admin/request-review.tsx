@@ -83,20 +83,23 @@ export function RequestReviewActions({
     setAction(next);
   };
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!action) return;
     setBusy(true);
     const target = action;
-    window.setTimeout(() => {
-      reviewRequest(request.id, target, note);
-      setBusy(false);
+    try {
+      await reviewRequest(request.id, target, note);
       setAction(null);
       toast[ACTIONS[target].toast](`${request.id} ${ACTIONS[target].result}`, {
         description: note.trim()
           ? `Note: ${note.trim()}`
           : `${REQUEST_TYPE_META[request.type].label} · ${request.date}`,
       });
-    }, 420);
+    } catch (err: unknown) {
+      toast.error("Action failed", { description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const meta = action ? ACTIONS[action] : null;

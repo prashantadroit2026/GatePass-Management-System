@@ -70,7 +70,7 @@ export function SideNav() {
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
           Gate 1 · Online
         </p>
-        <p className="mt-1 text-[11px] text-slate-400">{APP_NAME} demo environment</p>
+        <p className="mt-1 text-[11px] text-slate-400">{APP_NAME} live environment</p>
       </div>
     </div>
   );

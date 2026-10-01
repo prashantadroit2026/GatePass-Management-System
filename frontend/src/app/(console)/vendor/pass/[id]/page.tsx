@@ -18,49 +18,132 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useApp } from "@/context/app-context";
+import { requestsApi } from "@/lib/api";
 import { ORG_NAME } from "@/lib/constants";
 import { formatTimestamp } from "@/lib/format";
+import type { GateRequest } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input } from "@/components/ui/field";
 import { QrCodePlaceholder } from "@/components/ui/qr-code";
 import { AttendanceBadge, StatusBadge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function VendorPassPage() {
   const params = useParams<{ id: string }>();
-  const passId = decodeURIComponent(params.id ?? "").toUpperCase();
+  const passId = decodeURIComponent(params.id ?? "").trim();
   const { requests } = useApp();
-  const request = requests.find((r) => r.id.toUpperCase() === passId && r.type === "vendor");
+  const request = requests.find((r) => r.id.toLowerCase() === passId.toLowerCase() && r.type === "vendor");
+  const [fetchedRequest, setFetchedRequest] = useState<GateRequest | null>(null);
+  const [fetching, setFetching] = useState(!request);
   const [query, setQuery] = useState("");
   const router = useRouter();
 
+  useEffect(() => {
+    if (request) {
+      setFetching(false);
+      return;
+    }
+    if (!passId) {
+      setFetching(false);
+      return;
+    }
+    setFetching(true);
+    requestsApi
+      .get(passId)
+      .then((apiReq) => {
+        if (apiReq && apiReq.type === "vendor") {
+          let extraNotes: Record<string, string> = {};
+          if (apiReq.notes) {
+            try {
+              if (apiReq.notes.trim().startsWith("{")) {
+                extraNotes = JSON.parse(apiReq.notes);
+              }
+            } catch {}
+          }
+          const mapped: GateRequest = {
+            id: apiReq.id,
+            type: "vendor",
+            status: (apiReq.status === "cancelled" || apiReq.status === "expired" ? "rejected" : (apiReq.status as any)) ?? "pending",
+            date: extraNotes.arrival_date ?? extraNotes.arrivalDate ?? (apiReq.valid_from ? apiReq.valid_from.slice(0, 10) : new Date().toISOString().slice(0, 10)),
+            timeSlot: extraNotes.time_slot ?? extraNotes.timeSlot ?? (apiReq.valid_from && apiReq.valid_until ? `${apiReq.valid_from.slice(11, 16)} - ${apiReq.valid_until.slice(11, 16)}` : "—"),
+            purpose: apiReq.vendor_item_description ?? extraNotes.purpose ?? "—",
+            vehicle: extraNotes.vehicle_number ?? extraNotes.vehicle ?? undefined,
+            createdAt: apiReq.created_at,
+            requester: {
+              name: extraNotes.contact_name ?? extraNotes.contactName ?? apiReq.vendor_company ?? "Vendor Contact",
+              email: extraNotes.contact_email ?? extraNotes.contactEmail ?? "",
+              department: extraNotes.company ?? apiReq.vendor_company ?? "—",
+              hod: extraNotes.host_name ?? extraNotes.host ?? "—",
+              employeeId: apiReq.requester_id || "—",
+            },
+            guest: {
+              name: extraNotes.contact_name ?? extraNotes.contactName ?? apiReq.vendor_company ?? "Vendor",
+              contact: extraNotes.contact_phone ?? extraNotes.contactPhone ?? undefined,
+              company: apiReq.vendor_company ?? extraNotes.company ?? "Vendor",
+            },
+            review: apiReq.decided_at
+              ? {
+                  note: apiReq.rejection_reason ?? (typeof apiReq.notes === "string" && !apiReq.notes.startsWith("{") ? apiReq.notes : undefined),
+                  by: apiReq.approver_id ? "HR Reviewer" : undefined,
+                  at: apiReq.decided_at,
+                }
+              : undefined,
+            checkInAt: undefined,
+            checkOutAt: undefined,
+            attendance: "scheduled",
+          };
+          setFetchedRequest(mapped);
+        }
+      })
+      .catch(() => {
+        setFetchedRequest(null);
+      })
+      .finally(() => {
+        setFetching(false);
+      });
+  }, [passId, request]);
+
+  const activeRequest = request || fetchedRequest;
+
   const search = (e: FormEvent) => {
     e.preventDefault();
-    const id = query.trim().toUpperCase();
+    const id = query.trim();
     if (!id) return;
     router.push(`/vendor/pass/${encodeURIComponent(id)}`);
   };
 
-  if (!request) {
+  if (fetching) {
+    return (
+      <Card className="mx-auto max-w-xl">
+        <CardContent className="flex min-h-[300px] flex-col items-center justify-center gap-3 py-12 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" aria-hidden />
+          <p className="text-sm font-medium text-slate-700">Loading digital pass…</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!activeRequest) {
     return (
       <Card className="mx-auto max-w-xl">
         <CardContent>
           <EmptyState
             icon={<QrCode className="h-6 w-6" aria-hidden />}
             title={`Pass ${passId || "not found"} is not available`}
-            description="Passes live for the current demo session. If the demo data was reset, schedule a new arrival to generate a fresh pass."
+            description="Verify your pass ID from your receipt or schedule a new arrival."
             action={
               <div className="flex flex-col items-center gap-3">
                 <form onSubmit={search} className="flex w-full max-w-xs gap-2">
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="VND-2026-8891"
-                    className="font-mono uppercase"
+                    placeholder="Enter pass ID"
+                    className="font-mono"
                     aria-label="Pass ID"
                   />
                   <Button type="submit" icon={<Search className="h-4 w-4" aria-hidden />}>
@@ -79,15 +162,15 @@ export default function VendorPassPage() {
   }
 
   const timeline = [
-    { label: "Request submitted", at: request.createdAt, done: true },
-    { label: "HR approval", at: request.review?.at, done: Boolean(request.review?.at), note: request.review?.note },
+    { label: "Request submitted", at: activeRequest.createdAt, done: true },
+    { label: "HR approval", at: activeRequest.review?.at, done: Boolean(activeRequest.review?.at), note: activeRequest.review?.note },
     {
       label: "Gate check-in",
-      at: request.checkInAt,
-      done: Boolean(request.checkInAt),
-      note: request.status === "rejected" ? "Not applicable" : undefined,
+      at: activeRequest.checkInAt,
+      done: Boolean(activeRequest.checkInAt),
+      note: activeRequest.status === "rejected" ? "Not applicable" : undefined,
     },
-    { label: "Gate check-out", at: request.checkOutAt, done: Boolean(request.checkOutAt) },
+    { label: "Gate check-out", at: activeRequest.checkOutAt, done: Boolean(activeRequest.checkOutAt) },
   ];
 
   return (
@@ -114,19 +197,19 @@ export default function VendorPassPage() {
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
               Digital vendor pass
             </p>
-            <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{request.id}</p>
-            <p className="mt-1 text-sm text-slate-300">{request.guest?.company}</p>
+            <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{activeRequest.id}</p>
+            <p className="mt-1 text-sm text-slate-300">{activeRequest.guest?.company}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <StatusBadge status={request.status} />
-            {request.attendance !== "scheduled" ? <AttendanceBadge attendance={request.attendance} /> : null}
+            <StatusBadge status={activeRequest.status} />
+            {activeRequest.attendance !== "scheduled" ? <AttendanceBadge attendance={activeRequest.attendance} /> : null}
             <span className="text-xs text-slate-400">{ORG_NAME} · Gate 1</span>
           </div>
         </div>
 
         <CardContent className="grid gap-6 p-6 sm:grid-cols-[auto,1fr]">
           <div className="flex flex-col items-center gap-3">
-            <QrCodePlaceholder value={request.id} size={176} />
+            <QrCodePlaceholder value={activeRequest.id} size={176} />
             <p className="text-center text-[11px] leading-relaxed text-slate-500">
               Show this code at the gate.
               <br />
@@ -135,23 +218,23 @@ export default function VendorPassPage() {
           </div>
 
           <dl className="grid gap-3 sm:grid-cols-2">
-            <Detail icon={Building2} label="Company" value={request.guest?.company ?? "—"} />
-            <Detail icon={UserRound} label="Contact person" value={request.requester.name} />
-            <Detail icon={Phone} label="Phone" value={request.guest?.contact ?? "—"} />
-            <Detail icon={Mail} label="Email" value={request.requester.email} />
-            <Detail icon={CalendarDays} label="Arrival date" value={request.date} />
-            <Detail icon={Clock} label="Time slot" value={request.timeSlot} />
-            <Detail icon={MapPin} label="Host" value={request.requester.hod} />
-            <Detail icon={Car} label="Vehicle" value={request.vehicle ?? "Walk-in"} />
+            <Detail icon={Building2} label="Company" value={activeRequest.guest?.company ?? "—"} />
+            <Detail icon={UserRound} label="Contact person" value={activeRequest.requester.name} />
+            <Detail icon={Phone} label="Phone" value={activeRequest.guest?.contact ?? "—"} />
+            <Detail icon={Mail} label="Email" value={activeRequest.requester.email} />
+            <Detail icon={CalendarDays} label="Arrival date" value={activeRequest.date} />
+            <Detail icon={Clock} label="Time slot" value={activeRequest.timeSlot} />
+            <Detail icon={MapPin} label="Host" value={activeRequest.requester.hod} />
+            <Detail icon={Car} label="Vehicle" value={activeRequest.vehicle ?? "Walk-in"} />
           </dl>
         </CardContent>
 
         <div className="border-t border-border bg-slate-50/70 px-6 py-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Purpose of visit</p>
-          <p className="mt-1 text-sm text-slate-700">{request.purpose}</p>
-          {request.review?.note ? (
+          <p className="mt-1 text-sm text-slate-700">{activeRequest.purpose}</p>
+          {activeRequest.review?.note ? (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              <span className="font-semibold">Reviewer note ({request.review.by}):</span> {request.review.note}
+              <span className="font-semibold">Reviewer note ({activeRequest.review.by}):</span> {activeRequest.review.note}
             </p>
           ) : null}
         </div>
@@ -161,7 +244,7 @@ export default function VendorPassPage() {
         <CardHeader
           title="Live status timeline"
           description="Refresh-safe — status updates as HR and security act"
-          actions={<span className="text-xs text-slate-400">Submitted {formatTimestamp(request.createdAt)}</span>}
+          actions={<span className="text-xs text-slate-400">Submitted {formatTimestamp(activeRequest.createdAt)}</span>}
         />
         <CardContent>
           <ol className="space-y-4">
@@ -192,7 +275,7 @@ export default function VendorPassPage() {
                     {step.note ? ` · ${step.note}` : ""}
                   </p>
                 </div>
-                {index === 1 && request.status === "approved" ? (
+                {index === 1 && activeRequest.status === "approved" ? (
                   <CheckCircle2 className="ml-auto mt-1 h-4 w-4 text-emerald-500" aria-hidden />
                 ) : null}
               </li>

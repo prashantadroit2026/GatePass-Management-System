@@ -57,7 +57,7 @@ export default function VendorPortalPage() {
             Public vendor self-service
           </p>
           <h1 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Schedule your arrival at Acme Industries — no account, no email threads
+            Schedule your arrival at Adroit X Signet — no account, no email threads
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
             Three short steps generate a digital pass with a QR code. Show it at Gate 1 and security checks you in with

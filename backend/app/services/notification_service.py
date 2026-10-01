@@ -13,23 +13,33 @@ def create_notification(user_id: str, title: str, message: str, type_: str, rela
 
 
 def notify_approval(request: dict, approver_name: str = "Approver"):
-    create_notification(
-        user_id=request["requester_id"],
-        title="Request Approved",
-        message=f"Your {request['type']} request has been approved by {approver_name}.",
-        type_="approval",
-        related_id=request["id"],
-    )
+    if not request.get("requester_id"):
+        return
+    try:
+        create_notification(
+            user_id=request["requester_id"],
+            title="Request Approved",
+            message=f"Your {request['type']} request has been approved by {approver_name}.",
+            type_="approval",
+            related_id=request["id"],
+        )
+    except Exception:
+        pass
 
 
 def notify_rejection(request: dict, reason: str, approver_name: str = "Approver"):
-    create_notification(
-        user_id=request["requester_id"],
-        title="Request Rejected",
-        message=f"Your {request['type']} request was rejected. Reason: {reason}",
-        type_="rejection",
-        related_id=request["id"],
-    )
+    if not request.get("requester_id"):
+        return
+    try:
+        create_notification(
+            user_id=request["requester_id"],
+            title="Request Rejected",
+            message=f"Your {request['type']} request was rejected. Reason: {reason}",
+            type_="rejection",
+            related_id=request["id"],
+        )
+    except Exception:
+        pass
 
 
 def list_notifications(user_id: str, unread_only: bool = False) -> list[dict]:

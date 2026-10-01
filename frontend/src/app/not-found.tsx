@@ -15,7 +15,7 @@ export default function NotFound() {
       <div>
         <h1 className="text-lg font-semibold">This pass route does not exist</h1>
         <p className="mt-1 text-sm text-slate-400">
-          The link may have expired or the demo state was reset.
+          The link may have expired or the pass was deleted.
         </p>
       </div>
       <Link

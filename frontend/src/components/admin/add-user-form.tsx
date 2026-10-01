@@ -71,27 +71,31 @@ export function AddUserForm() {
     return Object.keys(next).length === 0;
   };
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!validate()) {
       toast.error("Fix the highlighted fields");
       return;
     }
     setBusy(true);
-    window.setTimeout(() => {
-      addUser({
+    try {
+      await (addUser as (input: { name: string; department: string; employeeId: string; hod: string; email: string; role: string; password: string; photo?: string }) => Promise<void>)({
         name: form.name.trim(),
         department: form.department,
         employeeId: form.employeeId.trim().toUpperCase(),
         hod: form.hod.trim(),
         email: form.email.trim().toLowerCase(),
         role: "employee",
+        password: form.password,
         photo: form.photo,
       });
-      setBusy(false);
       setForm(EMPTY);
       toast.success("User added", { description: `${form.name.trim()} can now request gate passes.` });
-    }, 600);
+    } catch (err: unknown) {
+      toast.error("Failed to add user", { description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -151,7 +155,7 @@ export function AddUserForm() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Work email" htmlFor="user-email" required error={errors.email}>
-              <Input id="user-email" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="name@acmeindustries.com" />
+              <Input id="user-email" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="name@adroitxsignet.com" />
             </Field>
             <Field label="Password" htmlFor="user-password" required error={errors.password} hint="Minimum 6 characters">
               <Input id="user-password" type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="••••••" />

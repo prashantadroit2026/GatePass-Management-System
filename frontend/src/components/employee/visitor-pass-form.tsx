@@ -35,7 +35,7 @@ export function VisitorPassForm() {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const next: Record<string, string> = {};
     if (form.guestName.trim().length < 2) next.guestName = "Guest name is required";
@@ -52,8 +52,8 @@ export function VisitorPassForm() {
     }
 
     setBusy(true);
-    window.setTimeout(() => {
-      const request = createRequest({
+    try {
+      const request = await createRequest({
         type: "visitor",
         date: form.date,
         timeSlot: form.timeSlot,
@@ -72,13 +72,16 @@ export function VisitorPassForm() {
           visitors: form.visitors,
         },
       });
-      setBusy(false);
       setCreated(request);
       setForm({ ...EMPTY, date: todayISO() });
       toast.success(`Visitor pass ${request.id} submitted`, {
         description: "You will see the live status under My Requests.",
       });
-    }, 600);
+    } catch (err: unknown) {
+      toast.error("Failed to submit", { description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (created) {

@@ -101,6 +101,7 @@ export interface ActivityEntry {
 }
 
 export interface UserProfile extends EmployeeRef {
+  id?: string;
   role: Role;
   title: string;
 }
