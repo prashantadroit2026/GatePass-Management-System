@@ -33,34 +33,55 @@ def can_decide(approver: dict, requester: dict | None) -> None:
         )
     req_role = requester.get("role") if requester else "vendor"
     appr_role = approver.get("role")
-    if req_role == "hr":
+    if req_role in ("employee", "vendor"):
+        if appr_role != "hr":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Employee and vendor requests can only be approved or rejected by HR"
+            )
+    elif req_role == "hr":
         if appr_role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="HR requests can only be approved or rejected by Admin"
             )
-    elif req_role in ("employee", "vendor") or req_role is None:
-        if appr_role not in ("hr", "admin"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Employee and vendor requests can only be approved or rejected by HR or Admin"
-            )
     else:
-        if appr_role not in ("hr", "admin"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to approve or reject this request"
-            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to approve or reject this request"
+        )
+
+
+def _fetch_request_or_404(request_id: str) -> dict:
+    """Fetch a request by ID without role-based visibility filtering.
+
+    Used by decision endpoints (approve/reject/cancel) where an unauthorized
+    action must return 403 rather than hiding the resource with a 404.
+    """
+    try:
+        res = supabase.table("gatepass_requests").select("*").eq("id", request_id).execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return res.data[0]
 
 
 def create_leave_request(requester: dict, data: dict) -> dict:
     valid_from, valid_until = _calculate_validity("leave", data.get("leave_days"))
 
+    leave_type = data["leave_type"]
+    if leave_type == "half_time":
+        leave_type = "outing"
+    elif leave_type == "full_time":
+        leave_type = "full_leave"
+
     payload = {
         "type": "leave",
         "status": "pending",
         "requester_id": requester["id"],
-        "leave_type": data["leave_type"],
+        "leave_type": leave_type,
         "leave_days": data.get("leave_days"),
         "leave_reason": data.get("leave_reason"),
         "notes": data.get("notes"),
@@ -217,7 +238,7 @@ def _parse_iso(dt_str: str | None) -> datetime | None:
 
 
 def approve_request(request_id: str, approver: dict, notes: str | None = None) -> dict:
-    req = get_request(request_id, approver)
+    req = _fetch_request_or_404(request_id)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot approve request in status: {req['status']}")
@@ -263,7 +284,7 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
 
 
 def reject_request(request_id: str, approver: dict, reason: str) -> dict:
-    req = get_request(request_id, approver)
+    req = _fetch_request_or_404(request_id)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Cannot reject request in status: {req['status']}")
@@ -300,7 +321,7 @@ def reject_request(request_id: str, approver: dict, reason: str) -> dict:
 
 
 def cancel_request(request_id: str, user: dict, notes: str | None = None) -> dict:
-    req = get_request(request_id, user)
+    req = _fetch_request_or_404(request_id)
 
     if req["status"] != "pending":
         raise HTTPException(status_code=400, detail="Only pending requests can be cancelled")

@@ -1,12 +1,113 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import {
+  Loader2,
+  Eye,
+  EyeOff,
+  ShieldAlert,
+  User,
+  Shield,
+  Building2,
+  Sparkles,
+} from "lucide-react";
 import { useAuth } from "@/context/auth-context";
-import { APP_NAME, ORG_NAME } from "@/lib/constants";
-import { ROLE_META } from "@/lib/constants";
+import { APP_NAME, ORG_NAME, ROLE_META } from "@/lib/constants";
+
+interface DemoAccount {
+  role: string;
+  name: string;
+  roleLabel: string;
+  email: string;
+  password: string;
+  icon: React.ComponentType<{ className?: string }>;
+  colorScheme: {
+    bg: string;
+    border: string;
+    hoverBorder: string;
+    hoverBg: string;
+    iconBg: string;
+    iconText: string;
+    badgeBg: string;
+    badgeText: string;
+  };
+}
+
+const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    role: "admin",
+    name: "Admin User",
+    roleLabel: "Admin / HR",
+    email: "admin@gatepass.com",
+    password: "password123",
+    icon: ShieldAlert,
+    colorScheme: {
+      bg: "bg-indigo-50/50",
+      border: "border-indigo-200",
+      hoverBorder: "hover:border-indigo-400",
+      hoverBg: "hover:bg-indigo-50",
+      iconBg: "bg-indigo-100",
+      iconText: "text-indigo-600",
+      badgeBg: "bg-indigo-100",
+      badgeText: "text-indigo-700",
+    },
+  },
+  {
+    role: "employee",
+    name: "John Doe",
+    roleLabel: "Employee",
+    email: "employee@gatepass.com",
+    password: "password123",
+    icon: User,
+    colorScheme: {
+      bg: "bg-sky-50/50",
+      border: "border-sky-200",
+      hoverBorder: "hover:border-sky-400",
+      hoverBg: "hover:bg-sky-50",
+      iconBg: "bg-sky-100",
+      iconText: "text-sky-600",
+      badgeBg: "bg-sky-100",
+      badgeText: "text-sky-700",
+    },
+  },
+  {
+    role: "security",
+    name: "Security Guard",
+    roleLabel: "Security",
+    email: "security@gatepass.com",
+    password: "password123",
+    icon: Shield,
+    colorScheme: {
+      bg: "bg-amber-50/50",
+      border: "border-amber-200",
+      hoverBorder: "hover:border-amber-400",
+      hoverBg: "hover:bg-amber-50",
+      iconBg: "bg-amber-100",
+      iconText: "text-amber-600",
+      badgeBg: "bg-amber-100",
+      badgeText: "text-amber-700",
+    },
+  },
+  {
+    role: "vendor",
+    name: "Acme Supplies",
+    roleLabel: "Vendor",
+    email: "vendor@gatepass.com",
+    password: "password123",
+    icon: Building2,
+    colorScheme: {
+      bg: "bg-emerald-50/50",
+      border: "border-emerald-200",
+      hoverBorder: "hover:border-emerald-400",
+      hoverBg: "hover:bg-emerald-50",
+      iconBg: "bg-emerald-100",
+      iconText: "text-emerald-600",
+      badgeBg: "bg-emerald-100",
+      badgeText: "text-emerald-700",
+    },
+  },
+];
 
 export default function LoginPage() {
   const { signIn, profile, uiRole, ready } = useAuth();
@@ -16,11 +117,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeDemoRole, setActiveDemoRole] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Already logged in — redirect
+  useEffect(() => {
+    if (ready && profile) {
+      router.replace(ROLE_META[uiRole].home);
+    }
+  }, [ready, profile, uiRole, router]);
+
   if (ready && profile) {
-    router.replace(ROLE_META[uiRole].home);
     return null;
   }
 
@@ -32,17 +139,29 @@ export default function LoginPage() {
     setLoading(false);
     if (err) {
       setError(err);
-    } else {
-      // Profile will load via onAuthStateChange → redirect handled above next render
+    }
+  }
+
+  async function handleDemoLogin(account: DemoAccount) {
+    setEmail(account.email);
+    setPassword(account.password);
+    setError(null);
+    setLoading(true);
+    setActiveDemoRole(account.role);
+    const err = await signIn(account.email, account.password);
+    setLoading(false);
+    setActiveDemoRole(null);
+    if (err) {
+      setError(err);
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-8">
       {/* Card */}
-      <div className="w-full max-w-md rounded-2xl border border-border bg-white p-8 shadow-sm">
+      <div className="w-full max-w-lg rounded-2xl border border-border bg-white p-6 sm:p-8 shadow-sm">
         {/* Logo + App name */}
-        <div className="mb-8 flex flex-col items-center gap-3">
+        <div className="mb-6 flex flex-col items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow">
             <svg
               width="28"
@@ -66,11 +185,71 @@ export default function LoginPage() {
         </div>
 
         {/* Heading */}
-        <div className="mb-6">
+        <div className="mb-6 text-center sm:text-left">
           <h2 className="text-lg font-semibold text-slate-900">Sign in to your account</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Use your company email and password.
+            Use your company email and password or select a demo account below.
           </p>
+        </div>
+
+        {/* Demo Quick Login Section */}
+        <div className="mb-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3.5">
+          <div className="mb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-900">
+              <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Instant Demo Login</span>
+            </div>
+            <span className="text-[11px] text-indigo-500">1-click access</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {DEMO_ACCOUNTS.map((account) => {
+              const Icon = account.icon;
+              const isLoggingIn = loading && activeDemoRole === account.role;
+
+              return (
+                <button
+                  key={account.role}
+                  type="button"
+                  onClick={() => handleDemoLogin(account)}
+                  disabled={loading}
+                  className={`group relative flex flex-col items-start rounded-lg border p-2.5 text-left transition ${account.colorScheme.border} ${account.colorScheme.bg} ${account.colorScheme.hoverBorder} ${account.colorScheme.hoverBg} focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-md ${account.colorScheme.iconBg} ${account.colorScheme.iconText}`}
+                      >
+                        {isLoggingIn ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Icon className="h-3.5 w-3.5" />
+                        )}
+                      </span>
+                      <div>
+                        <div className="text-xs font-semibold text-slate-800">
+                          {account.roleLabel}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 truncate text-[11px] text-slate-500 w-full font-mono">
+                    {account.email}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-slate-400 font-medium">Or enter credentials</span>
+          </div>
         </div>
 
         {/* Error */}
@@ -132,7 +311,7 @@ export default function LoginPage() {
             disabled={loading}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {loading && !activeDemoRole ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 Signing in…

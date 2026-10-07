@@ -78,11 +78,34 @@ function mapRequest(r: ApiRequest, usersById: Record<string, ApiUser>): GateRequ
   }
 
   const requester = {
-    name: extraNotes.contact_name ?? extraNotes.contactName ?? requesterUser?.name ?? (r.type === "vendor" ? (r.vendor_company ?? "Vendor Contact") : (r.requester_id || "Requester")),
-    email: extraNotes.contact_email ?? extraNotes.contactEmail ?? requesterUser?.email ?? "",
-    department: extraNotes.company ?? r.vendor_company ?? requesterUser?.department ?? "—",
-    hod: extraNotes.host_name ?? extraNotes.host ?? "—",
-    employeeId: requesterUser?.employee_id ?? r.requester_id ?? "—",
+    name:
+      extraNotes.employeeName ??
+      extraNotes.contact_name ??
+      extraNotes.contactName ??
+      requesterUser?.name ??
+      (r.type === "vendor" ? (r.vendor_company ?? "Vendor Contact") : (r.requester_id || "Requester")),
+    email:
+      extraNotes.employeeEmail ??
+      extraNotes.contact_email ??
+      extraNotes.contactEmail ??
+      requesterUser?.email ??
+      "",
+    department:
+      extraNotes.employeeDepartment ??
+      extraNotes.company ??
+      r.vendor_company ??
+      requesterUser?.department ??
+      "—",
+    hod:
+      extraNotes.employeeHod ??
+      extraNotes.host_name ??
+      extraNotes.host ??
+      "—",
+    employeeId:
+      extraNotes.employeeId ??
+      requesterUser?.employee_id ??
+      r.requester_id ??
+      "—",
   };
 
   // Determine type from backend `type` field
@@ -115,7 +138,7 @@ function mapRequest(r: ApiRequest, usersById: Record<string, ApiUser>): GateRequ
     };
   }
 
-  const date = extraNotes.arrival_date ?? extraNotes.arrivalDate ?? (r.valid_from ? r.valid_from.slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const date = extraNotes.date ?? extraNotes.arrival_date ?? extraNotes.arrivalDate ?? (r.valid_from ? r.valid_from.slice(0, 10) : new Date().toISOString().slice(0, 10));
   const timeSlot = extraNotes.time_slot ?? extraNotes.timeSlot ?? (r.valid_from && r.valid_until ? `${r.valid_from.slice(11, 16)} - ${r.valid_until.slice(11, 16)}` : "—");
   const vehicle = extraNotes.vehicle_number ?? extraNotes.vehicle ?? undefined;
   const purpose = r.leave_reason ?? r.visitor_purpose ?? r.vendor_item_description ?? extraNotes.purpose ?? "—";
@@ -182,7 +205,7 @@ function mapGateLog(log: GateLogOut, requestsById: Record<string, GateRequest>):
   return {
     id: log.id,
     requestId: log.request_id,
-    kind: log.movement === "in" ? "check_in" : "check_out",
+    kind: log.direction === "in" ? "check_in" : "check_out",
     label: req ? (req.guest?.name ?? req.requester.name) : log.request_id,
     detail: req ? `${req.type} · ${req.guest?.company ?? req.requester.department}` : "—",
     at: log.logged_at,
@@ -285,6 +308,9 @@ interface AppContextValue {
   recordGateMovement: (id: string, kind: "check_in" | "check_out") => Promise<void>;
   users: AppUser[];
   addUser: (input: NewUser & { password: string }) => Promise<void>;
+  updateUser: (id: string, data: Partial<AppUser> & { password?: string }) => Promise<void>;
+  updateUserPassword: (id: string, password: string) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   permissions: Permission[];
   togglePermission: (featureId: string, role: Role) => void;
   can: (featureId: string) => boolean;
@@ -419,16 +445,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let created: ApiRequest;
 
       if (input.type === "employee") {
+        const leaveType = input.mode === "full_time" ? "full_leave" : "outing";
         created = await requestsApi.createLeave({
-          leave_type: input.mode ?? "half_time",
+          leave_type: leaveType,
           leave_reason: input.purpose,
-          notes: undefined,
+          notes: JSON.stringify({
+            employeeName: input.requester.name,
+            employeeEmail: input.requester.email,
+            employeeDepartment: input.requester.department,
+            employeeHod: input.requester.hod,
+            employeeId: input.requester.employeeId,
+            date: input.date,
+            timeSlot: input.timeSlot,
+            expectedReturn: input.expectedReturn,
+            mode: input.mode,
+            purpose: input.purpose,
+          }),
         });
       } else if (input.type === "visitor") {
         created = await requestsApi.createVisitor({
           visitor_name: input.guest?.name ?? "Guest",
           visitor_phone: input.guest?.contact ?? "",
           visitor_purpose: input.purpose,
+          notes: JSON.stringify({
+            guestCompany: input.guest?.company,
+            visitors: input.guest?.visitors,
+            date: input.date,
+            timeSlot: input.timeSlot,
+            hostName: input.requester.name,
+            hostEmail: input.requester.email,
+            hostDepartment: input.requester.department,
+          }),
         });
       } else {
         created = await requestsApi.createVendor({
@@ -484,7 +531,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (id: string, kind: "check_in" | "check_out") => {
       const log = await gateApi.log({
         request_id: id,
-        movement: kind === "check_in" ? "in" : "out",
+        direction: kind === "check_in" ? "in" : "out",
       });
       setRawLogs((prev) => [...prev, log]);
     },
@@ -503,6 +550,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const updateUser = useCallback(
+    async (id: string, input: Partial<AppUser> & { password?: string }) => {
+      const payload: {
+        name?: string;
+        email?: string;
+        role?: string;
+        is_active?: boolean;
+        password?: string;
+      } = {};
+
+      if (input.name !== undefined) payload.name = input.name;
+      if (input.email !== undefined) payload.email = input.email;
+      if (input.role !== undefined) payload.role = input.role;
+      if (input.status !== undefined) payload.is_active = input.status === "active";
+      if (input.password !== undefined && input.password) payload.password = input.password;
+
+      const updated = await usersApi.update(id, payload);
+      setRawUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+    },
+    [],
+  );
+
+  const updateUserPassword = useCallback(async (id: string, password: string) => {
+    await usersApi.updatePassword(id, password);
+  }, []);
+
+  const deleteUser = useCallback(async (id: string) => {
+    await usersApi.delete(id);
+    setRawUsers((prev) => prev.filter((u) => u.id !== id));
+  }, []);
 
   const togglePermission = useCallback((featureId: string, role: Role) => {
     setPermissions((prev) =>
@@ -589,6 +667,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       recordGateMovement,
       users,
       addUser,
+      updateUser,
+      updateUserPassword,
+      deleteUser,
       permissions,
       togglePermission,
       can,
@@ -610,6 +691,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     recordGateMovement,
     users,
     addUser,
+    updateUser,
+    updateUserPassword,
+    deleteUser,
     permissions,
     togglePermission,
     can,

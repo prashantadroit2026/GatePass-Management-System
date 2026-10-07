@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.schemas.user import UserCreate, UserUpdate, UserOut
+from app.schemas.user import UserCreate, UserUpdate, UserPasswordUpdate, UserOut
 from app.services import user_service
 from app.api.deps import get_current_user, require_permission
 from app.core.rbac import Permission
@@ -48,3 +48,22 @@ async def update_user(
 ):
     """Update a user (Admin / HR)"""
     return user_service.update_user(user_id, data, current_user)
+
+
+@router.post("/{user_id}/password")
+async def update_user_password(
+    user_id: str,
+    data: UserPasswordUpdate,
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """Change / reset user password (Admin / HR)"""
+    return user_service.update_user_password(user_id, data.password, current_user)
+
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: str,
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """Delete a user from directory and auth (Admin / HR)"""
+    return user_service.delete_user(user_id, current_user)

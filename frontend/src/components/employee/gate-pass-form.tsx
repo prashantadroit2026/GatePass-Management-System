@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarPlus, CheckCircle2, Clock, Search } from "lucide-react";
+import { ArrowRight, CalendarPlus, CheckCircle2, Clock, Search, UserCheck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -22,8 +22,20 @@ export function GatePassForm() {
   const { users, createRequest, currentUser, can } = useApp();
   const allowed = can("create_requests");
 
-  const [employeeId, setEmployeeId] = useState(currentUser.employeeId);
-  const [lookup, setLookup] = useState<LookupState>({ profile: null });
+  const defaultId = currentUser?.employeeId && currentUser.employeeId !== "—"
+    ? currentUser.employeeId
+    : "EMP-1001";
+
+  const [employeeId, setEmployeeId] = useState(defaultId);
+  const [lookup, setLookup] = useState<LookupState>({
+    profile: {
+      name: currentUser?.name || "Employee",
+      email: currentUser?.email || "",
+      department: currentUser?.department && currentUser.department !== "—" ? currentUser.department : "Engineering",
+      hod: currentUser?.hod && currentUser.hod !== "—" ? currentUser.hod : "Department Head",
+      employeeId: defaultId,
+    },
+  });
   const [mode, setMode] = useState<PassMode>("full_time");
   const [date, setDate] = useState(todayISO());
   const [reason, setReason] = useState("");
@@ -35,29 +47,58 @@ export function GatePassForm() {
   useEffect(() => {
     const id = employeeId.trim().toUpperCase();
     if (!id) {
-      setLookup({ profile: null, error: "Enter an employee ID to auto-fill details" });
+      if (currentUser?.name) {
+        setLookup({
+          profile: {
+            name: currentUser.name,
+            email: currentUser.email,
+            department: currentUser.department && currentUser.department !== "—" ? currentUser.department : "General",
+            hod: currentUser.hod && currentUser.hod !== "—" ? currentUser.hod : "—",
+            employeeId: currentUser.employeeId || "EMP-1001",
+          },
+        });
+      } else {
+        setLookup({ profile: null, error: "Enter your employee ID" });
+      }
       return;
     }
-    const match = users.find((u) => u.employeeId.toUpperCase() === id);
+
+    // 1. Search in directory
+    const match = users.find(
+      (u) =>
+        u.employeeId.toUpperCase() === id ||
+        u.id.toUpperCase() === id ||
+        u.email.toLowerCase() === employeeId.trim().toLowerCase(),
+    );
+
     if (match) {
       setLookup({
         profile: {
           name: match.name,
           email: match.email,
-          department: match.department,
-          hod: match.hod,
-          employeeId: match.employeeId,
+          department: match.department && match.department !== "—" ? match.department : "General",
+          hod: match.hod && match.hod !== "—" ? match.hod : "—",
+          employeeId: match.employeeId || id,
         },
       });
     } else {
-      setLookup({ profile: null, error: `No employee found for “${id}”` });
+      // Use logged in user's profile with the specified ID
+      setLookup({
+        profile: {
+          name: currentUser?.name || "Employee",
+          email: currentUser?.email || "",
+          department: currentUser?.department && currentUser.department !== "—" ? currentUser.department : "General",
+          hod: currentUser?.hod && currentUser.hod !== "—" ? currentUser.hod : "—",
+          employeeId: id,
+        },
+      });
     }
-  }, [employeeId, users]);
+  }, [employeeId, users, currentUser]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const next: Record<string, string> = {};
-    if (!lookup.profile) next.employeeId = "Enter a valid employee ID";
+    if (!employeeId.trim()) next.employeeId = "Enter an employee ID";
     if (!date) next.date = "Choose a date";
     else if (date < todayISO()) next.date = "Date cannot be in the past";
     if (reason.trim().length < 5) next.reason = "Describe the reason in at least 5 characters";
@@ -68,24 +109,34 @@ export function GatePassForm() {
       return;
     }
 
+    const requesterProfile: EmployeeRef = lookup.profile || {
+      name: currentUser.name || "Employee",
+      email: currentUser.email || "",
+      department: currentUser.department || "General",
+      hod: currentUser.hod || "—",
+      employeeId: employeeId.trim().toUpperCase(),
+    };
+
     setBusy(true);
     try {
       const createdRequest = await createRequest({
         type: "employee",
         mode,
         date,
-        timeSlot: mode === "half_time" ? "Half day" : "Full day",
+        timeSlot: mode === "half_time" ? "Half day (Outing)" : "Full day (Leave)",
         expectedReturn: mode === "half_time" ? expectedReturn : undefined,
         purpose: reason.trim(),
-        requester: lookup.profile as EmployeeRef,
+        requester: requesterProfile,
       });
       setCreated(createdRequest);
       setReason("");
-      toast.success(`Gate pass ${createdRequest.id} submitted`, {
-        description: "HR will review it — track the status under My Requests.",
+      toast.success(`Gate pass submitted successfully`, {
+        description: "Your pass is pending approval — track its status under My Requests.",
       });
     } catch (err: unknown) {
-      toast.error("Failed to submit request", { description: err instanceof Error ? err.message : "Unknown error" });
+      toast.error("Failed to submit request", {
+        description: err instanceof Error ? err.message : "Unknown error occurred",
+      });
     } finally {
       setBusy(false);
     }
@@ -100,7 +151,7 @@ export function GatePassForm() {
           </span>
           <h2 className="mt-4 text-lg font-semibold text-slate-900">Request submitted</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Pass <span className="font-mono font-semibold text-slate-900">{created.id}</span> is pending HR approval
+            Pass <span className="font-mono font-semibold text-slate-900">{created.id}</span> is pending approval
             for {created.date}.
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
@@ -120,7 +171,7 @@ export function GatePassForm() {
     <Card>
       <CardHeader
         title="Employee gate pass"
-        description="Enter an employee ID to auto-fill name, department and HOD"
+        description="Enter or confirm your employee details to generate an exit gate pass"
         actions={<CalendarPlus className="h-4 w-4 text-indigo-500" aria-hidden />}
       />
       <CardContent>
@@ -136,11 +187,14 @@ export function GatePassForm() {
             htmlFor="emp-id"
             required
             error={errors.employeeId ?? lookup.error}
-            hint={lookup.profile ? undefined : "Try EMP-1042 or pick from the directory"}
+            hint="Enter your company Employee ID (e.g. EMP-1042)"
           >
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden
+                />
                 <Input
                   id="emp-id"
                   value={employeeId}
@@ -149,30 +203,35 @@ export function GatePassForm() {
                   className="pl-9 font-mono uppercase"
                 />
               </div>
-              <Button variant="outline" size="md" onClick={() => setEmployeeId(currentUser.employeeId)}>
+              <Button
+                variant="outline"
+                size="md"
+                icon={<UserCheck className="h-4 w-4 text-indigo-600" />}
+                onClick={() => setEmployeeId(defaultId)}
+              >
                 My ID
               </Button>
             </div>
           </Field>
 
           <div className="grid gap-4 rounded-xl border border-border bg-slate-50 p-4 sm:grid-cols-3">
-            <Readonly label="Name" value={lookup.profile?.name} />
+            <Readonly label="Requester Name" value={lookup.profile?.name} />
             <Readonly label="Department" value={lookup.profile?.department} />
             <Readonly label="Reporting HOD" value={lookup.profile?.hod} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="field-label">Pass type</p>
-            <Segmented
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "full_time", label: "Full Time" },
-                { value: "half_time", label: "Half Time" },
-              ]}
-            />
-          </div>
+            <div>
+              <p className="field-label">Pass type</p>
+              <Segmented
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "full_time", label: "Full Day Leave" },
+                  { value: "half_time", label: "Temporary Outing" },
+                ]}
+              />
+            </div>
 
             <Field label="Date" htmlFor="gp-date" required error={errors.date}>
               <Input
@@ -194,7 +253,10 @@ export function GatePassForm() {
               hint="Security will mark the pass as departed until you return"
             >
               <div className="relative">
-                <Clock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+                <Clock
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden
+                />
                 <Select
                   id="gp-return"
                   value={expectedReturn}
@@ -211,16 +273,16 @@ export function GatePassForm() {
             </Field>
           ) : (
             <p className="rounded-xl border border-dashed border-border bg-slate-50 px-4 py-3 text-xs text-slate-500">
-              Full time passes cover the entire working day — no return time is required.
+              Full day pass covers the entire work schedule — no return time required today.
             </p>
           )}
 
-          <Field label="Reason" htmlFor="gp-reason" required error={errors.reason}>
+          <Field label="Reason for Gate Pass" htmlFor="gp-reason" required error={errors.reason}>
             <Textarea
               id="gp-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Aadhaar centre appointment downtown"
+              placeholder="e.g. Official client meeting downtown / Medical appointment"
             />
           </Field>
 
@@ -235,8 +297,13 @@ export function GatePassForm() {
             >
               Clear
             </Button>
-            <Button type="submit" loading={busy} disabled={!allowed} icon={<CalendarPlus className="h-4 w-4" aria-hidden />}>
-              Submit gate pass
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={!allowed}
+              icon={<CalendarPlus className="h-4 w-4" aria-hidden />}
+            >
+              Submit Gate Pass
             </Button>
           </div>
         </form>

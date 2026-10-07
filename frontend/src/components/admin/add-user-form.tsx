@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
+import type { Role } from "@/types";
 
 interface FormState {
   name: string;
@@ -16,6 +17,7 @@ interface FormState {
   employeeId: string;
   hod: string;
   email: string;
+  role: Role;
   password: string;
   photo?: string;
 }
@@ -26,6 +28,7 @@ const EMPTY: FormState = {
   employeeId: "",
   hod: "",
   email: "",
+  role: "employee",
   password: "",
 };
 
@@ -79,18 +82,18 @@ export function AddUserForm() {
     }
     setBusy(true);
     try {
-      await (addUser as (input: { name: string; department: string; employeeId: string; hod: string; email: string; role: string; password: string; photo?: string }) => Promise<void>)({
+      await addUser({
         name: form.name.trim(),
         department: form.department,
         employeeId: form.employeeId.trim().toUpperCase(),
         hod: form.hod.trim(),
         email: form.email.trim().toLowerCase(),
-        role: "employee",
+        role: form.role,
         password: form.password,
         photo: form.photo,
       });
       setForm(EMPTY);
-      toast.success("User added", { description: `${form.name.trim()} can now request gate passes.` });
+      toast.success("User added", { description: `${form.name.trim()} can now access the system.` });
     } catch (err: unknown) {
       toast.error("Failed to add user", { description: err instanceof Error ? err.message : "Unknown error" });
     } finally {
@@ -102,7 +105,7 @@ export function AddUserForm() {
     <Card>
       <CardHeader
         title="Add new user"
-        description="Photo, department, HOD and login credentials"
+        description="Photo, department, role and login credentials"
         actions={<UserPlus className="h-4 w-4 text-indigo-500" aria-hidden />}
       />
       <CardContent>
@@ -149,9 +152,19 @@ export function AddUserForm() {
             </Field>
           </div>
 
-          <Field label="Reporting HOD" htmlFor="user-hod" required error={errors.hod}>
-            <Input id="user-hod" value={form.hod} onChange={(e) => set("hod", e.target.value)} placeholder="e.g. Rajesh Iyer" />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Reporting HOD" htmlFor="user-hod" required error={errors.hod}>
+              <Input id="user-hod" value={form.hod} onChange={(e) => set("hod", e.target.value)} placeholder="e.g. Rajesh Iyer" />
+            </Field>
+            <Field label="Role" htmlFor="user-role" required>
+              <Select id="user-role" value={form.role} onChange={(e) => set("role", e.target.value)}>
+                <option value="employee">Employee</option>
+                <option value="admin">Admin / HR</option>
+                <option value="security">Security</option>
+                <option value="vendor">Vendor</option>
+              </Select>
+            </Field>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Work email" htmlFor="user-email" required error={errors.email}>

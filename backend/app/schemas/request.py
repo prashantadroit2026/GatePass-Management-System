@@ -24,7 +24,7 @@ class ItemDirection(str, Enum):
 
 # ---------- Create schemas ----------
 class LeaveCreate(BaseModel):
-    leave_type: Literal["outing", "full_leave"]
+    leave_type: Literal["outing", "full_leave", "half_time", "full_time"]
     leave_days: Optional[int] = Field(None, ge=1)
     leave_reason: Optional[str] = None
     notes: Optional[str] = None

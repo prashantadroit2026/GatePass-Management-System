@@ -56,6 +56,13 @@ export const usersApi = {
     apiFetch<ApiUser>("/users/", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<UpdateUserPayload>) =>
     apiFetch<ApiUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updatePassword: (id: string, password: string) =>
+    apiFetch<{ message: string }>(`/users/${id}/password`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+  delete: (id: string) =>
+    apiFetch<{ message: string }>(`/users/${id}`, { method: "DELETE" }),
 };
 
 // ---- Requests ----
@@ -161,20 +168,21 @@ export interface ApiNotification {
 
 export interface GateLogCreate {
   request_id: string;
-  movement: "in" | "out";
+  direction: "in" | "out";
 }
 
 export interface GateLogPayload {
   request_id: string;
-  movement: "in" | "out";
+  direction: "in" | "out";
 }
 
 export interface GateLogOut {
   id: string;
   request_id: string;
-  security_id: string;
-  movement: string;
+  logged_by: string;
+  direction: string;
   logged_at: string;
+  notes?: string;
 }
 
 export interface AcceptedItem {
@@ -224,6 +232,8 @@ export interface CreateUserPayload {
 
 export interface UpdateUserPayload {
   name?: string;
+  email?: string;
   role?: string;
   is_active?: boolean;
+  password?: string;
 }
