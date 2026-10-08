@@ -1,14 +1,23 @@
 import { todayISO } from "@/lib/format";
 import type { GateRequest, RequestStatus } from "@/types";
 
+const PLACEHOLDER_NAME = /^\s*(new[\s_-]*)+!*\s*$/i;
+
+export function displayName(name: string | null | undefined, fallback = "Unnamed"): string {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed || PLACEHOLDER_NAME.test(trimmed) || trimmed === "—" || trimmed === "-") return fallback;
+  return trimmed;
+}
+
 export function subjectName(request: GateRequest): string {
-  if (request.type === "employee") return request.requester.name;
-  return request.guest?.name ?? request.requester.name;
+  if (request.type === "employee") return displayName(request.requester.name, "Employee");
+  const guest = displayName(request.guest?.name, "");
+  return guest || displayName(request.requester.name);
 }
 
 export function subjectCompany(request: GateRequest): string {
-  if (request.type === "employee") return request.requester.department;
-  return request.guest?.company ?? "—";
+  if (request.type === "employee") return displayName(request.requester.department, "—");
+  return displayName(request.guest?.company, "—");
 }
 
 export function isToday(request: GateRequest, today = todayISO()): boolean {

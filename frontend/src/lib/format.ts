@@ -31,6 +31,13 @@ export function formatDateShort(iso: string): string {
   return format(new Date(y, m - 1, d), "EEE, dd MMM");
 }
 
+export function formatTimeSlot(slot: string | null | undefined): string {
+  if (!slot) return "—";
+  const parts = slot.split("-").map((p) => p.trim());
+  if (parts.length === 2 && parts[0] && parts[1] && parts[0] === parts[1]) return "—";
+  return slot;
+}
+
 export function formatClock(iso: string | null | undefined): string {
   if (!iso) return "—";
   return format(new Date(iso), "HH:mm");

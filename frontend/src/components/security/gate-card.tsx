@@ -4,8 +4,10 @@ import { LogIn, LogOut, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/context/app-context";
 import { REQUEST_TYPE_META } from "@/lib/constants";
-import { formatClock, formatDate } from "@/lib/format";
+import { formatClock, formatDate, formatTimeSlot } from "@/lib/format";
+import { subjectCompany, subjectName } from "@/lib/requests";
 import { AttendanceBadge, TypeBadge } from "@/components/ui/badge";
+import { PassId } from "@/components/ui/pass-id";
 import { cn } from "@/lib/utils";
 import type { GateRequest } from "@/types";
 
@@ -36,14 +38,14 @@ export function GateCard({ request }: { request: GateRequest }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-bold text-slate-900">{request.id}</span>
+            <PassId id={request.id} className="text-base font-bold text-slate-900" />
             <TypeBadge type={request.type} />
           </div>
           <p className="mt-1.5 truncate text-lg font-semibold text-slate-900">
-            {request.guest?.name ?? request.requester.name}
+            {subjectName(request)}
           </p>
           <p className="truncate text-sm text-slate-600">
-            {request.guest?.company ?? request.requester.department}
+            {subjectCompany(request)}
             {request.requester.name !== (request.guest?.name ?? "") && request.type !== "employee"
               ? ` · host: ${request.requester.name}`
               : ""}
@@ -54,7 +56,7 @@ export function GateCard({ request }: { request: GateRequest }) {
 
       <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
         <p>
-          <span className="text-slate-400">Slot:</span> <span className="font-medium">{request.timeSlot}</span>
+          <span className="text-slate-400">Slot:</span> <span className="font-medium">{formatTimeSlot(request.timeSlot)}</span>
           {request.expectedReturn ? <span className="text-slate-500"> · return by {request.expectedReturn}</span> : null}
         </p>
         <p className="truncate">

@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useApp } from "@/context/app-context";
 import { REQUEST_TYPE_META } from "@/lib/constants";
-import { formatDate, todayISO } from "@/lib/format";
+import { formatDate, formatTimeSlot, todayISO } from "@/lib/format";
 import { sortNewestFirst, statusCounts, subjectName } from "@/lib/requests";
+import { PassId, shortId } from "@/components/ui/pass-id";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
@@ -47,9 +48,10 @@ export default function ApprovalsPage() {
     {
       key: "id",
       header: "Pass ID",
+      hideOnMobile: true,
       cell: (r) => (
         <div>
-          <span className="font-mono text-sm font-semibold text-slate-900">{r.id}</span>
+          <PassId id={r.id} className="text-sm font-semibold text-slate-900" />
           {r.date === today ? <span className="ml-2 text-[10px] font-bold uppercase text-indigo-500">Today</span> : null}
         </div>
       ),
@@ -57,6 +59,7 @@ export default function ApprovalsPage() {
     {
       key: "subject",
       header: "Requester / Subject",
+      hideOnMobile: true,
       cell: (r) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-slate-900">{subjectName(r)}</p>
@@ -73,19 +76,21 @@ export default function ApprovalsPage() {
       cell: (r) => (
         <div>
           <p className="text-sm text-slate-700">{formatDate(r.date)}</p>
-          <p className="text-xs text-slate-500">{r.timeSlot}</p>
+          <p className="text-xs text-slate-500">{formatTimeSlot(r.timeSlot)}</p>
         </div>
       ),
     },
     {
       key: "status",
       header: "Status",
-      cell: (r) => (r.status === "pending" ? <StatusBadge status="pending" /> : <StatusBadge status={r.status} />),
+      hideOnMobile: true,
+      cell: (r) => <StatusBadge status={r.status} />,
     },
     {
       key: "actions",
       header: "Actions",
       align: "right",
+      hideOnMobile: true,
       cell: (r) => (
         <div className="flex items-center justify-end gap-2">
           <RequestReviewActions request={r} compact />
@@ -174,13 +179,9 @@ export default function ApprovalsPage() {
           rowKey={(r) => r.id}
           loading={loading}
           loadingRows={5}
-          cardTitle={(r) => (
-            <span className="flex items-center gap-2">
-              <span className="font-mono">{r.id}</span>
-              <StatusBadge status={r.status} />
-            </span>
-          )}
-          cardSubtitle={(r) => `${subjectName(r)} · ${REQUEST_TYPE_META[r.type].label}`}
+          cardTitle={(r) => subjectName(r)}
+          cardBadge={(r) => <StatusBadge status={r.status} />}
+          cardSubtitle={(r) => `Pass ${shortId(r.id)} · ${REQUEST_TYPE_META[r.type].label} · ${formatDate(r.date)}`}
           cardActions={(r) => (
             <>
               <RequestReviewActions request={r} />

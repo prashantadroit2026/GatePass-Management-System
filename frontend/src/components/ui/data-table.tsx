@@ -24,6 +24,7 @@ interface DataTableProps<T> {
   empty?: ReactNode;
   cardTitle?: (row: T) => ReactNode;
   cardSubtitle?: (row: T) => ReactNode;
+  cardBadge?: (row: T) => ReactNode;
   cardActions?: (row: T) => ReactNode;
   onRowClick?: (row: T) => void;
   rowClassName?: (row: T) => string;
@@ -45,6 +46,7 @@ export function DataTable<T>({
   empty,
   cardTitle,
   cardSubtitle,
+  cardBadge,
   cardActions,
   onRowClick,
   rowClassName,
@@ -132,10 +134,11 @@ export function DataTable<T>({
                   <div className="mt-0.5 truncate text-xs text-slate-500">{cardSubtitle(row)}</div>
                 ) : null}
               </div>
+              {cardBadge ? <div className="shrink-0 py-0.5">{cardBadge(row)}</div> : null}
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border pt-3">
               {columns
-                .filter((col) => !col.hideOnMobile)
+                .filter((col) => !col.hideOnMobile && col.header.trim() !== "")
                 .map((col) => (
                   <div key={col.key} className="min-w-0">
                     <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-400">

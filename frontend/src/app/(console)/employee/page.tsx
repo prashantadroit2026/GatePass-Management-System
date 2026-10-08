@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { AttendanceBadge, StatusBadge, TypeBadge } from "@/components/ui/badge";
+import { PassId, shortId } from "@/components/ui/pass-id";
 import { RequestDetailButton } from "@/components/admin/request-review";
 
 export default function EmployeeOverviewPage() {
@@ -82,7 +83,7 @@ export default function EmployeeOverviewPage() {
                       <Avatar name={subjectName(r)} size="sm" />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-slate-900">{r.id}</span>
+                          <PassId id={r.id} className="text-sm font-semibold text-slate-900" />
                           <TypeBadge type={r.type} />
                           {r.attendance !== "scheduled" ? <AttendanceBadge attendance={r.attendance} /> : null}
                         </div>
@@ -150,7 +151,7 @@ export default function EmployeeOverviewPage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-900">{entry.label}</p>
-                        <p className="truncate text-xs text-slate-500">{entry.requestId}</p>
+                        <p className="truncate text-xs text-slate-500">{shortId(entry.requestId)}</p>
                       </div>
                       <p className="text-xs font-semibold tabular-nums text-slate-600">
                         {new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

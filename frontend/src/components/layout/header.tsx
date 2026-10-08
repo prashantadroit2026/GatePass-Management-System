@@ -1,7 +1,6 @@
 "use client";
 
 import { CalendarDays, LogOut, Menu } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -12,6 +11,7 @@ import { APP_NAME, ORG_NAME } from "@/lib/constants";
 import { Avatar } from "@/components/ui/avatar";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { LogoImage } from "@/components/ui/logo";
 
 export function Header({ onMenuOpen }: { onMenuOpen: () => void }) {
   const { currentUser, roleHome, signOut } = useApp();
@@ -38,13 +38,11 @@ export function Header({ onMenuOpen }: { onMenuOpen: () => void }) {
         </button>
 
         <Link href={roleHome} className="flex items-center gap-2.5">
-          <Image
-            src="/logo.png"
+          <LogoImage
             alt={`${ORG_NAME} logo`}
-            width={203}
-            height={110}
             priority
             className="h-9 w-auto"
+            fallbackClassName="h-9 w-9"
           />
           <span className="hidden leading-tight sm:block">
             <span className="block text-[15px] font-semibold tracking-tight text-slate-900">{APP_NAME}</span>

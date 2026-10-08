@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useApp } from "@/context/app-context";
 import { REQUEST_TYPE_META } from "@/lib/constants";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatTimeSlot } from "@/lib/format";
 import { employeeRequests, subjectName } from "@/lib/requests";
+import { PassId, shortId } from "@/components/ui/pass-id";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/field";
@@ -46,9 +47,10 @@ export default function MyRequestsPage() {
     {
       key: "id",
       header: "Pass ID",
+      hideOnMobile: true,
       cell: (r) => (
         <div>
-          <span className="font-mono text-sm font-semibold text-slate-900">{r.id}</span>
+          <PassId id={r.id} className="text-sm font-semibold text-slate-900" />
           <div className="mt-1">
             <TypeBadge type={r.type} />
           </div>
@@ -58,6 +60,7 @@ export default function MyRequestsPage() {
     {
       key: "purpose",
       header: "Purpose / Guest",
+      hideOnMobile: true,
       cell: (r) => (
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-slate-900">{subjectName(r)}</p>
@@ -73,7 +76,7 @@ export default function MyRequestsPage() {
         <div>
           <p className="text-sm text-slate-700">{formatDate(r.date)}</p>
           <p className="text-xs text-slate-500">
-            {r.timeSlot}
+            {formatTimeSlot(r.timeSlot)}
             {r.expectedReturn ? ` · return by ${r.expectedReturn}` : ""}
           </p>
         </div>
@@ -82,6 +85,7 @@ export default function MyRequestsPage() {
     {
       key: "status",
       header: "Status",
+      hideOnMobile: true,
       cell: (r) => (
         <div>
           <StatusBadge status={r.status} />
@@ -97,6 +101,7 @@ export default function MyRequestsPage() {
       key: "actions",
       header: "",
       align: "right",
+      hideOnMobile: true,
       cell: (r) => <RequestDetailButton request={r} />,
     },
   ];
@@ -149,13 +154,9 @@ export default function MyRequestsPage() {
           rowKey={(r) => r.id}
           loading={loading}
           loadingRows={4}
-          cardTitle={(r) => (
-            <span className="flex items-center gap-2">
-              <span className="font-mono">{r.id}</span>
-              <StatusBadge status={r.status} />
-            </span>
-          )}
-          cardSubtitle={(r) => `${subjectName(r)} · ${formatDate(r.date)}`}
+          cardTitle={(r) => subjectName(r)}
+          cardBadge={(r) => <StatusBadge status={r.status} />}
+          cardSubtitle={(r) => `Pass ${shortId(r.id)} · ${REQUEST_TYPE_META[r.type].label} · ${formatDate(r.date)}`}
           cardActions={(r) => <RequestDetailButton request={r} />}
           empty={
             <EmptyState

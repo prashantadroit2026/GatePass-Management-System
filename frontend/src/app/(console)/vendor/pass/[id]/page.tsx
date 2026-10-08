@@ -22,13 +22,15 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useApp } from "@/context/app-context";
 import { requestsApi } from "@/lib/api";
 import { ORG_NAME } from "@/lib/constants";
-import { formatTimestamp } from "@/lib/format";
+import { formatTimestamp, formatTimeSlot } from "@/lib/format";
 import type { GateRequest } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input } from "@/components/ui/field";
 import { QrCodePlaceholder } from "@/components/ui/qr-code";
+import { PassId } from "@/components/ui/pass-id";
+import { displayName } from "@/lib/requests";
 import { AttendanceBadge, StatusBadge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -197,8 +199,10 @@ export default function VendorPassPage() {
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
               Digital vendor pass
             </p>
-            <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{activeRequest.id}</p>
-            <p className="mt-1 text-sm text-slate-300">{activeRequest.guest?.company}</p>
+            <div className="mt-2 max-w-full">
+              <PassId id={activeRequest.id} head={12} className="font-mono text-2xl font-semibold tracking-tight text-white" />
+            </div>
+            <p className="mt-1 text-sm text-slate-300">{displayName(activeRequest.guest?.company, "Vendor")}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <StatusBadge status={activeRequest.status} />
@@ -218,13 +222,13 @@ export default function VendorPassPage() {
           </div>
 
           <dl className="grid gap-3 sm:grid-cols-2">
-            <Detail icon={Building2} label="Company" value={activeRequest.guest?.company ?? "—"} />
-            <Detail icon={UserRound} label="Contact person" value={activeRequest.requester.name} />
-            <Detail icon={Phone} label="Phone" value={activeRequest.guest?.contact ?? "—"} />
-            <Detail icon={Mail} label="Email" value={activeRequest.requester.email} />
+            <Detail icon={Building2} label="Company" value={displayName(activeRequest.guest?.company, "—")} />
+            <Detail icon={UserRound} label="Contact person" value={displayName(activeRequest.requester.name, "Vendor contact")} />
+            <Detail icon={Phone} label="Phone" value={displayName(activeRequest.guest?.contact, "—")} />
+            <Detail icon={Mail} label="Email" value={displayName(activeRequest.requester.email, "—")} />
             <Detail icon={CalendarDays} label="Arrival date" value={activeRequest.date} />
-            <Detail icon={Clock} label="Time slot" value={activeRequest.timeSlot} />
-            <Detail icon={MapPin} label="Host" value={activeRequest.requester.hod} />
+            <Detail icon={Clock} label="Time slot" value={formatTimeSlot(activeRequest.timeSlot)} />
+            <Detail icon={MapPin} label="Host" value={displayName(activeRequest.requester.hod, "—")} />
             <Detail icon={Car} label="Vehicle" value={activeRequest.vehicle ?? "Walk-in"} />
           </dl>
         </CardContent>

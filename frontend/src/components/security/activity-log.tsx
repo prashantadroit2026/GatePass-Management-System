@@ -3,6 +3,7 @@
 import { Activity, LogIn, LogOut } from "lucide-react";
 import { useApp } from "@/context/app-context";
 import { EmptyState } from "@/components/ui/empty-state";
+import { shortId } from "@/components/ui/pass-id";
 
 export function ActivityLog() {
   const { activity } = useApp();
@@ -48,7 +49,7 @@ export function ActivityLog() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-900">{entry.label}</p>
                   <p className="truncate text-xs text-slate-500">
-                    {entry.requestId} · {entry.detail}
+                    {shortId(entry.requestId)} · {entry.detail}
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-400">by {entry.actor}</p>
                 </div>

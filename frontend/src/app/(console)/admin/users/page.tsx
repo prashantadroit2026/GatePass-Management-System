@@ -169,6 +169,7 @@ export default function UsersPage() {
     {
       key: "name",
       header: "User",
+      hideOnMobile: true,
       cell: (u) => (
         <div className="flex items-center gap-3">
           <Avatar name={u.name} src={u.photo} size="sm" />
@@ -208,6 +209,7 @@ export default function UsersPage() {
       key: "actions",
       header: "Actions",
       align: "right",
+      hideOnMobile: true,
       cell: (u) => {
         const isSelf = u.id === currentUser.id;
         return (

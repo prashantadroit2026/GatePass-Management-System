@@ -6,10 +6,12 @@ import { toast } from "sonner";
 import { useApp } from "@/context/app-context";
 import { REQUEST_TYPE_META } from "@/lib/constants";
 import { subjectName } from "@/lib/requests";
+import { formatTimeSlot } from "@/lib/format";
 import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/field";
 import { StatusBadge } from "@/components/ui/badge";
+import { PassId, shortId } from "@/components/ui/pass-id";
 import type { GateRequest, RequestStatus } from "@/types";
 
 type Action = Exclude<RequestStatus, "pending">;
@@ -75,7 +77,7 @@ export function RequestReviewActions({
   const allowed = can("approve_requests");
 
   if (request.status !== "pending") {
-    return <StatusBadge status={request.status} />;
+    return null;
   }
 
   const open = (next: Action) => {
@@ -159,14 +161,14 @@ export function RequestReviewActions({
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-mono text-sm font-semibold text-slate-900">{request.id}</span>
-              <StatusBadge status={request.status} />
+              <PassId id={request.id} className="text-sm font-semibold text-slate-900" />
+              <span className="py-0.5"><StatusBadge status={request.status} /></span>
             </div>
             <p className="mt-1.5 text-sm text-slate-600">
               {subjectName(request)} · {REQUEST_TYPE_META[request.type].label}
             </p>
             <p className="mt-0.5 text-xs text-slate-500">
-              {request.purpose} — {request.date} · {request.timeSlot}
+              {request.purpose} — {request.date} · {formatTimeSlot(request.timeSlot)}
             </p>
           </div>
           <label className="block">
@@ -222,7 +224,7 @@ export function RequestDetailModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Request ${request.id}`}
+      title={`Request ${shortId(request.id)}`}
       description={REQUEST_TYPE_META[request.type].label}
       size="lg"
     >
@@ -233,7 +235,7 @@ export function RequestDetailModal({
           <Detail label="Department" value={request.requester.department} />
           <Detail label="HOD" value={request.requester.hod} />
           <Detail label="Scheduled date" value={request.date} />
-          <Detail label="Time slot" value={request.timeSlot} />
+          <Detail label="Time slot" value={formatTimeSlot(request.timeSlot)} />
           {request.expectedReturn ? <Detail label="Expected return" value={request.expectedReturn} /> : null}
           {request.vehicle ? <Detail label="Vehicle" value={request.vehicle} /> : null}
           {request.guest ? <Detail label="Guest / company" value={request.guest.name} /> : null}

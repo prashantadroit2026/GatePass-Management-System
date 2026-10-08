@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { LogoImage } from "@/components/ui/logo";
 
 /** Full-screen branded splash shown while the demo state boots and during role redirects. */
 export function BootSplash() {
@@ -9,7 +9,7 @@ export function BootSplash() {
       <div className="relative">
         <div className="absolute inset-0 animate-ping rounded-2xl bg-indigo-500/30" aria-hidden />
         <div className="relative rounded-2xl bg-white p-3 shadow-xl shadow-indigo-500/20">
-          <Image src="/logo.png" alt="" width={203} height={110} priority className="h-14 w-auto" />
+          <LogoImage priority className="h-14 w-auto" fallbackClassName="h-14 w-14" />
         </div>
       </div>
       <div className="text-center">
