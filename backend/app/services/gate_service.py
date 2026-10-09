@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from app.db import supabase
+from app.db import db
 from fastapi import HTTPException, status
 
 
@@ -18,7 +18,7 @@ def log_gate_movement(security_user: dict, data: dict) -> dict:
     notes = data.get("notes")
 
     # 1. Fetch request
-    req_res = supabase.table("gatepass_requests").select("*").eq("id", request_id).single().execute()
+    req_res = db.table("gatepass_requests").select("*").eq("id", request_id).single().execute()
     if not req_res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gatepass request not found")
     req = req_res.data
@@ -41,7 +41,7 @@ def log_gate_movement(security_user: dict, data: dict) -> dict:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gatepass validity has expired")
 
     # 4. Fetch existing logs to determine sequence
-    logs_res = supabase.table("gate_logs").select("*").eq("request_id", request_id).order("logged_at", desc=False).execute()
+    logs_res = db.table("gate_logs").select("*").eq("request_id", request_id).order("logged_at", desc=False).execute()
     existing_logs = logs_res.data or []
     log_count = len(existing_logs)
 
@@ -86,7 +86,7 @@ def log_gate_movement(security_user: dict, data: dict) -> dict:
         "notes": notes,
     }
 
-    res = supabase.table("gate_logs").insert(payload).execute()
+    res = db.table("gate_logs").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to log gate movement")
 
@@ -105,12 +105,12 @@ def list_gate_logs(request_id: str | None = None, current_user: dict | None = No
         # This will raise 404 if current_user has no right to see this request
         get_request(request_id, current_user)
 
-    query = supabase.table("gate_logs").select("*").order("logged_at", desc=True)
+    query = db.table("gate_logs").select("*").order("logged_at", desc=True)
     if request_id:
         query = query.eq("request_id", request_id)
     elif current_user and current_user["role"] in ("employee", "vendor"):
         # If no specific request_id, filter to own requests for regular users
-        own_reqs = supabase.table("gatepass_requests").select("id").eq("requester_id", current_user["id"]).execute()
+        own_reqs = db.table("gatepass_requests").select("id").eq("requester_id", current_user["id"]).execute()
         req_ids = [r["id"] for r in (own_reqs.data or [])]
         if not req_ids:
             return []
@@ -122,14 +122,14 @@ def list_gate_logs(request_id: str | None = None, current_user: dict | None = No
 
 def _notify_vendor_coming(request_id: str):
     """Create notification when vendor enters"""
-    req = supabase.table("gatepass_requests").select("*").eq("id", request_id).single().execute().data
+    req = db.table("gatepass_requests").select("*").eq("id", request_id).single().execute().data
     if not req or req["type"] != "vendor":
         return
 
     # Notify HR and Admin
-    users = supabase.table("users").select("id").in_("role", ["hr", "admin"]).execute().data or []
+    users = db.table("users").select("id").in_("role", ["hr", "admin"]).execute().data or []
     for u in users:
-        supabase.table("notifications").insert({
+        db.table("notifications").insert({
             "user_id": u["id"],
             "title": "Vendor Arrived",
             "message": f"Vendor has entered the gate. Item: {req.get('vendor_item_description', 'N/A')}",
@@ -175,7 +175,7 @@ def get_accepted_list(
 
     Each item gets a `next_movement` field: "in" | "out" | None (completed).
     """
-    query = supabase.table("gatepass_requests").select("*").eq("status", "approved").order("valid_until", desc=False)
+    query = db.table("gatepass_requests").select("*").eq("status", "approved").order("valid_until", desc=False)
     if req_type:
         query = query.eq("type", req_type)
 
@@ -186,14 +186,14 @@ def get_accepted_list(
     user_ids = list({r["requester_id"] for r in requests if r.get("requester_id")})
     users_map: dict[str, str] = {}
     if user_ids:
-        users_res = supabase.table("users").select("id,name").in_("id", user_ids).execute()
+        users_res = db.table("users").select("id,name").in_("id", user_ids).execute()
         users_map = {u["id"]: u["name"] for u in (users_res.data or [])}
 
     # Fetch all gate_logs for these requests at once
     req_ids = [r["id"] for r in requests]
     logs_by_req: dict[str, int] = {}
     if req_ids:
-        logs_res = supabase.table("gate_logs").select("request_id").in_("request_id", req_ids).execute()
+        logs_res = db.table("gate_logs").select("request_id").in_("request_id", req_ids).execute()
         for log in (logs_res.data or []):
             rid = log["request_id"]
             logs_by_req[rid] = logs_by_req.get(rid, 0) + 1

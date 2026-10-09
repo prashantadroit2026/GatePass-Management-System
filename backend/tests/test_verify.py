@@ -1,8 +1,9 @@
+import os
+import sqlite3
 import pytest
-import psycopg2
 import asyncio
 from datetime import datetime, timezone, timedelta
-from jose import jwt
+import jwt  # PyJWT
 from tests.conftest import make_jwt
 
 
@@ -645,40 +646,70 @@ def test_reminders_fresh_pending_not_notified(api_client, mock_db, auth_headers)
 
 
 
-# --- Direct SQL DB Tests ---
-def test_db_sql_fake_request_id_fk_error(db_conn):
-    cur = db_conn.cursor()
-    # Insert with fake user_id to trigger FK error
-    with pytest.raises(psycopg2.errors.ForeignKeyViolation):
-        cur.execute("""
-            INSERT INTO public.gate_logs (request_id, logged_by, direction)
-            VALUES ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 'out');
-        """)
+# --- Direct SQL DB Tests (Cloudflare D1 / SQLite schema) ---
 
-def test_db_sql_valid_until_less_than_valid_from_check_error(db_conn):
-    cur = db_conn.cursor()
-    # Create fake user first
-    cur.execute("INSERT INTO auth.users (id, email) VALUES ('11111111-1111-1111-1111-111111111111', 't@t.com') ON CONFLICT DO NOTHING;")
-    cur.execute("INSERT INTO public.users (id, name, email, role) VALUES ('11111111-1111-1111-1111-111111111111', 'T', 't@t.com', 'employee') ON CONFLICT DO NOTHING;")
+_SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "..", "d1", "schema.sql")
 
-    with pytest.raises(psycopg2.errors.CheckViolation):
-        cur.execute("""
-            INSERT INTO public.gatepass_requests (type, requester_id, valid_from, valid_until)
-            VALUES ('leave', '11111111-1111-1111-1111-111111111111', now(), now() - interval '1 hour');
-        """)
 
-def test_db_sql_direction_sideways_check_error(db_conn):
-    cur = db_conn.cursor()
-    cur.execute("INSERT INTO auth.users (id, email) VALUES ('11111111-1111-1111-1111-111111111111', 't@t.com') ON CONFLICT DO NOTHING;")
-    cur.execute("INSERT INTO public.users (id, name, email, role) VALUES ('11111111-1111-1111-1111-111111111111', 'T', 't@t.com', 'employee') ON CONFLICT DO NOTHING;")
+def _fresh_sqlite():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("PRAGMA foreign_keys = ON")
+    with open(_SCHEMA_PATH) as f:
+        conn.executescript(f.read())
+    return conn
 
-    res = cur.execute("""
-        INSERT INTO public.gatepass_requests (id, type, requester_id)
-        VALUES ('22222222-2222-2222-2222-222222222222', 'leave', '11111111-1111-1111-1111-111111111111') ON CONFLICT DO NOTHING;
-    """)
 
-    with pytest.raises(psycopg2.errors.CheckViolation):
-        cur.execute("""
-            INSERT INTO public.gate_logs (request_id, logged_by, direction)
-            VALUES ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', 'SIDEWAYS');
-        """)
+def test_db_sql_fake_request_id_fk_error():
+    conn = _fresh_sqlite()
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO gate_logs (id, request_id, logged_by, direction) VALUES (?, ?, ?, ?)",
+            ("lg-1", "00000000-0000-0000-0000-000000000000", "00000000-0000-0000-0000-000000000001", "out"),
+        )
+
+
+def test_db_sql_valid_until_less_than_valid_from_check_error():
+    conn = _fresh_sqlite()
+    conn.execute(
+        "INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
+        ("u-1", "T", "t@t.com", "x", "employee"),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO gatepass_requests (id, type, requester_id, valid_from, valid_until) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("r-1", "leave", "u-1", "2026-01-02T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+
+
+def test_db_sql_direction_sideways_check_error():
+    conn = _fresh_sqlite()
+    conn.execute(
+        "INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
+        ("u-1", "T", "t@t.com", "x", "employee"),
+    )
+    conn.execute(
+        "INSERT INTO gatepass_requests (id, type, requester_id, valid_from, valid_until) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("r-1", "leave", "u-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO gate_logs (id, request_id, logged_by, direction) VALUES (?, ?, ?, ?)",
+            ("lg-1", "r-1", "u-1", "SIDEWAYS"),
+        )
+
+
+def test_db_sql_expired_status_allowed():
+    """Migration 004 equivalent: the 'expired' status is a valid enum value."""
+    conn = _fresh_sqlite()
+    conn.execute(
+        "INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
+        ("u-1", "T", "t@t.com", "x", "employee"),
+    )
+    conn.execute(
+        "INSERT INTO gatepass_requests (id, type, status, requester_id) VALUES (?, ?, ?, ?)",
+        ("r-1", "leave", "expired", "u-1"),
+    )
+    row = conn.execute("SELECT status FROM gatepass_requests WHERE id = 'r-1'").fetchone()
+    assert row[0] == "expired"

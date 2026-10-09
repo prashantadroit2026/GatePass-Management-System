@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from app.db import supabase
+from app.db import db
 from app.services import notification_service
 from fastapi import HTTPException, status
 
@@ -17,7 +17,7 @@ def _calculate_validity(req_type: str, leave_days: int | None = None) -> tuple[d
 
 def _get_default_system_user_id() -> str | None:
     try:
-        res = supabase.table("users").select("id").limit(1).execute()
+        res = db.table("users").select("id").limit(1).execute()
         if res.data:
             return res.data[0]["id"]
     except Exception:
@@ -59,7 +59,7 @@ def _fetch_request_or_404(request_id: str) -> dict:
     action must return 403 rather than hiding the resource with a 404.
     """
     try:
-        res = supabase.table("gatepass_requests").select("*").eq("id", request_id).execute()
+        res = db.table("gatepass_requests").select("*").eq("id", request_id).execute()
     except Exception:
         raise HTTPException(status_code=404, detail="Request not found")
 
@@ -89,7 +89,7 @@ def create_leave_request(requester: dict, data: dict) -> dict:
         "valid_until": valid_until.isoformat(),
     }
 
-    res = supabase.table("gatepass_requests").insert(payload).execute()
+    res = db.table("gatepass_requests").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to create leave request")
     return res.data[0]
@@ -110,7 +110,7 @@ def create_visitor_request(requester: dict, data: dict) -> dict:
         "valid_until": valid_until.isoformat(),
     }
 
-    res = supabase.table("gatepass_requests").insert(payload).execute()
+    res = db.table("gatepass_requests").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to create visitor request")
     return res.data[0]
@@ -157,7 +157,7 @@ def create_vendor_request(requester: dict | None, data: dict) -> dict:
     }
 
     try:
-        res = supabase.table("gatepass_requests").insert(payload).execute()
+        res = db.table("gatepass_requests").insert(payload).execute()
     except Exception as e:
         raise e
 
@@ -168,7 +168,7 @@ def create_vendor_request(requester: dict | None, data: dict) -> dict:
 
 def get_request(request_id: str, current_user: dict | None = None) -> dict:
     try:
-        res = supabase.table("gatepass_requests").select("*").eq("id", request_id).execute()
+        res = db.table("gatepass_requests").select("*").eq("id", request_id).execute()
     except Exception:
         raise HTTPException(status_code=404, detail="Request not found")
 
@@ -193,7 +193,7 @@ def get_request(request_id: str, current_user: dict | None = None) -> dict:
 
     if role == "hr":
         if req.get("requester_id"):
-            requester = supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute().data
+            requester = db.table("users").select("role").eq("id", req["requester_id"]).single().execute().data
             if requester and requester.get("role") == "admin":
                 raise HTTPException(status_code=404, detail="Request not found")
         return req
@@ -211,12 +211,12 @@ def get_request(request_id: str, current_user: dict | None = None) -> dict:
 
 def list_requests_for_user(user: dict) -> list[dict]:
     role = user["role"]
-    query = supabase.table("gatepass_requests").select("*").order("created_at", desc=True)
+    query = db.table("gatepass_requests").select("*").order("created_at", desc=True)
 
     if role == "admin":
         pass
     elif role == "hr":
-        admins = supabase.table("users").select("id").eq("role", "admin").execute()
+        admins = db.table("users").select("id").eq("role", "admin").execute()
         admin_ids = [a["id"] for a in (admins.data or [])]
         if admin_ids:
             query = query.not_.in_("requester_id", admin_ids)
@@ -254,7 +254,7 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
     requester = None
     if req.get("requester_id"):
         try:
-            req_res = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute()
+            req_res = db.table("users").select("*").eq("id", req["requester_id"]).single().execute()
             requester = req_res.data
         except Exception:
             requester = None
@@ -272,7 +272,7 @@ def approve_request(request_id: str, approver: dict, notes: str | None = None) -
     if notes:
         update["notes"] = notes
 
-    res = supabase.table("gatepass_requests").update(update).eq("id", request_id).execute()
+    res = db.table("gatepass_requests").update(update).eq("id", request_id).execute()
     updated = res.data[0]
 
     # Send notification if requester exists
@@ -293,7 +293,7 @@ def reject_request(request_id: str, approver: dict, reason: str) -> dict:
     requester = None
     if req.get("requester_id"):
         try:
-            req_res = supabase.table("users").select("*").eq("id", req["requester_id"]).single().execute()
+            req_res = db.table("users").select("*").eq("id", req["requester_id"]).single().execute()
             requester = req_res.data
         except Exception:
             requester = None
@@ -309,7 +309,7 @@ def reject_request(request_id: str, approver: dict, reason: str) -> dict:
         "decided_at": _now().isoformat(),
         "rejection_reason": reason,
     }
-    res = supabase.table("gatepass_requests").update(update).eq("id", request_id).execute()
+    res = db.table("gatepass_requests").update(update).eq("id", request_id).execute()
     updated = res.data[0]
 
     # Send notification
@@ -340,7 +340,7 @@ def cancel_request(request_id: str, user: dict, notes: str | None = None) -> dic
     if notes:
         update["notes"] = notes
 
-    res = supabase.table("gatepass_requests").update(update).eq("id", request_id).execute()
+    res = db.table("gatepass_requests").update(update).eq("id", request_id).execute()
     return res.data[0]
 
 
@@ -353,7 +353,7 @@ def expire_stale_requests() -> int:
 
     # Fetch all pending requests (MockSupabase doesn't support server-side
     # datetime comparisons, so we filter in Python)
-    res = supabase.table("gatepass_requests").select("id,valid_until").eq("status", "pending").execute()
+    res = db.table("gatepass_requests").select("id,valid_until").eq("status", "pending").execute()
     pending = res.data or []
 
     expired_ids = []
@@ -368,7 +368,7 @@ def expire_stale_requests() -> int:
     # Bulk-update each expired request (MockSupabase doesn't support IN-based
     # bulk update, so update one by one; real Supabase can use .in_)
     for req_id in expired_ids:
-        supabase.table("gatepass_requests").update({"status": "expired"}).eq("id", req_id).execute()
+        db.table("gatepass_requests").update({"status": "expired"}).eq("id", req_id).execute()
 
     return len(expired_ids)
 

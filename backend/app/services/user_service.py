@@ -1,53 +1,60 @@
-from app.db import supabase
+import uuid
+
+from app.db import db
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.rbac import Role
+from app.core.security import hash_password
 from fastapi import HTTPException, status
 
 
 def create_user(data: UserCreate) -> dict:
-    """Create user in Supabase Auth + public.users table"""
-    # 1. Create in Auth
-    auth_response = supabase.auth.admin.create_user({
-        "email": data.email,
-        "password": data.password,
-        "email_confirm": True,  # auto-confirm for now
-    })
+    """Create a user in the users table with a hashed password."""
+    email = data.email.strip().lower()
+    role = data.role.value if isinstance(data.role, Role) else str(data.role)
 
-    if auth_response.user is None:
+    existing = db.table("users").select("id").eq("email", email).single().execute()
+    if existing.data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create auth user"
+            detail="A user with this email already exists",
         )
 
-    user_id = auth_response.user.id
-
-    # 2. Insert into public.users
-    db_response = supabase.table("users").insert({
+    user_id = str(uuid.uuid4())
+    res = db.table("users").insert({
         "id": user_id,
         "name": data.name,
-        "email": data.email,
-        "role": data.role.value if isinstance(data.role, Role) else data.role,
+        "email": email,
+        "password_hash": hash_password(data.password),
+        "role": role,
     }).execute()
 
-    if not db_response.data:
-        # rollback auth user if public insert fails
-        supabase.auth.admin.delete_user(user_id)
+    if not res.data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create user profile"
+            detail="Failed to create user profile",
         )
 
-    return db_response.data[0]
+    return res.data[0]
 
 
 def get_user_by_id(user_id: str) -> dict | None:
-    response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-    return response.data
+    res = db.table("users").select("*").eq("id", user_id).single().execute()
+    return res.data
 
 
 def list_users() -> list[dict]:
-    response = supabase.table("users").select("*").order("created_at", desc=True).execute()
-    return response.data or []
+    res = db.table("users").select("*").order("created_at", desc=True).execute()
+    return res.data or []
+
+
+def _count_active_admins(exclude_id: str | None = None) -> int:
+    admins = (
+        db.table("users").select("id").eq("role", "admin").eq("is_active", True).execute().data
+        or []
+    )
+    if exclude_id:
+        admins = [a for a in admins if a["id"] != exclude_id]
+    return len(admins)
 
 
 def update_user(user_id: str, data: UserUpdate, current_user: dict | None = None) -> dict:
@@ -61,18 +68,6 @@ def update_user(user_id: str, data: UserUpdate, current_user: dict | None = None
 
     # Handle password update if included in UserUpdate
     new_password = update_data.pop("password", None)
-    if new_password:
-        if current_user:
-            if target_user["role"] == "admin" and current_user["role"] != "admin":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="HR cannot change password for Admin accounts"
-                )
-        supabase.auth.admin.update_user_by_id(user_id, {"password": new_password})
-
-    # If only password was updated and nothing else
-    if not update_data:
-        return target_user
 
     if current_user:
         curr_id = current_user["id"]
@@ -110,34 +105,35 @@ def update_user(user_id: str, data: UserUpdate, current_user: dict | None = None
             will_demote = new_role is not None and new_role != "admin"
 
             if will_deactivate or will_demote:
-                admins_res = supabase.table("users").select("*").eq("role", "admin").eq("is_active", True).execute()
-                active_admins = admins_res.data or []
-                if len(active_admins) <= 1 and any(a["id"] == user_id for a in active_admins):
+                if target_user.get("is_active", True) and _count_active_admins() <= 1:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Cannot deactivate or demote the last active admin"
                     )
 
+        # HR cannot change password for Admin accounts
+        if new_password and target_user["role"] == "admin" and curr_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="HR cannot change password for Admin accounts"
+            )
+
     if "role" in update_data and isinstance(update_data["role"], Role):
         update_data["role"] = update_data["role"].value
 
-    # If email is updated, also update in Supabase Auth
     if "email" in update_data:
-        try:
-            supabase.auth.admin.update_user_by_id(user_id, {
-                "email": update_data["email"],
-                "email_confirm": True
-            })
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to update email in auth: {str(e)}"
-            )
+        update_data["email"] = update_data["email"].strip().lower()
 
-    response = supabase.table("users").update(update_data).eq("id", user_id).execute()
-    if not response.data:
+    if new_password:
+        update_data["password_hash"] = hash_password(new_password)
+
+    if not update_data:
+        return target_user
+
+    res = db.table("users").update(update_data).eq("id", user_id).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="User not found")
-    return response.data[0]
+    return res.data[0]
 
 
 def update_user_password(user_id: str, password: str, current_user: dict | None = None) -> dict:
@@ -152,13 +148,11 @@ def update_user_password(user_id: str, password: str, current_user: dict | None 
                 detail="HR cannot change password for Admin accounts"
             )
 
-    try:
-        supabase.auth.admin.update_user_by_id(user_id, {"password": password})
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update password: {str(e)}"
-        )
+    res = db.table("users").update(
+        {"password_hash": hash_password(password)}
+    ).eq("id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="User not found")
 
     return {"message": "Password updated successfully"}
 
@@ -188,21 +182,12 @@ def delete_user(user_id: str, current_user: dict | None = None) -> dict:
 
         # Cannot delete the last active admin
         if target_user["role"] == "admin":
-            admins_res = supabase.table("users").select("*").eq("role", "admin").eq("is_active", True).execute()
-            active_admins = admins_res.data or []
-            if len(active_admins) <= 1 and any(a["id"] == user_id for a in active_admins):
+            if _count_active_admins() <= 1:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot delete the last active admin"
                 )
 
-    # 1. Delete from public.users table
-    supabase.table("users").delete().eq("id", user_id).execute()
-
-    # 2. Delete from Supabase Auth
-    try:
-        supabase.auth.admin.delete_user(user_id)
-    except Exception:
-        pass  # ignore if already gone in auth
+    db.table("users").delete().eq("id", user_id).execute()
 
     return {"message": "User deleted successfully"}

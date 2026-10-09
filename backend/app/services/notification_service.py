@@ -1,9 +1,9 @@
-from app.db import supabase
+from app.db import db
 from fastapi import HTTPException
 
 
 def create_notification(user_id: str, title: str, message: str, type_: str, related_id: str | None = None):
-    supabase.table("notifications").insert({
+    db.table("notifications").insert({
         "user_id": user_id,
         "title": title,
         "message": message,
@@ -43,7 +43,7 @@ def notify_rejection(request: dict, reason: str, approver_name: str = "Approver"
 
 
 def list_notifications(user_id: str, unread_only: bool = False) -> list[dict]:
-    query = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True)
+    query = db.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True)
     if unread_only:
         query = query.eq("is_read", False)
     res = query.execute()
@@ -51,7 +51,7 @@ def list_notifications(user_id: str, unread_only: bool = False) -> list[dict]:
 
 
 def mark_as_read(notification_id: str, user_id: str) -> dict:
-    res = supabase.table("notifications").update({"is_read": True})\
+    res = db.table("notifications").update({"is_read": True})\
         .eq("id", notification_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -59,5 +59,5 @@ def mark_as_read(notification_id: str, user_id: str) -> dict:
 
 
 def mark_all_read(user_id: str):
-    supabase.table("notifications").update({"is_read": True})\
+    db.table("notifications").update({"is_read": True})\
         .eq("user_id", user_id).eq("is_read", False).execute()

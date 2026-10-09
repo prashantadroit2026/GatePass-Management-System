@@ -10,8 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { authApi, usersApi, type ApiUser } from "@/lib/api";
+import { authApi, usersApi, type ApiUser, type LocalSession } from "@/lib/api";
 import { BootSplash } from "@/components/layout/boot-splash";
 
 // ---------------------------------------------------------------------------
@@ -36,10 +35,8 @@ function backendToUIRole(role: string | undefined): UIRole {
 interface AuthContextValue {
   /** Auth is initialised (either logged-in or not) */
   ready: boolean;
-  /** Supabase session, null when logged out */
-  session: Session | null;
-  /** Supabase auth user */
-  user: User | null;
+  /** Active session (JWT from /auth/login), null when logged out */
+  session: LocalSession | null;
   /** Full profile from /api/v1/users/me  */
   profile: ApiUser | null;
   /** UI-level role (mapped from backend role) */
@@ -56,8 +53,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<LocalSession | null>(null);
   const [profile, setProfile] = useState<ApiUser | null>(null);
   const bootedRef = useRef(false);
 
@@ -73,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const status = (err as Error & { status?: number }).status;
       if (status === 401 || status === 403) {
         setSession(null);
-        setUser(null);
         await authApi.signOut().catch(() => {});
       }
     }
@@ -87,7 +82,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi.getSession().then(({ data }) => {
       const sess = data.session;
       setSession(sess);
-      setUser(sess?.user ?? null);
       if (sess) {
         loadProfile().finally(() => setReady(true));
       } else {
@@ -98,7 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Subscribe to auth state changes
     const { data: listener } = authApi.onAuthStateChange(async (_event, sess) => {
       setSession(sess);
-      setUser(sess?.user ?? null);
       if (sess) {
         await loadProfile();
       } else {
@@ -134,14 +127,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       session,
-      user,
       profile,
       uiRole,
       signIn,
       signOut,
       refreshProfile,
     }),
-    [ready, session, user, profile, uiRole, signIn, signOut, refreshProfile],
+    [ready, session, profile, uiRole, signIn, signOut, refreshProfile],
   );
 
   if (!ready) return <BootSplash />;

@@ -1,10 +1,9 @@
 import pytest
-import psycopg2
 from datetime import datetime, timezone, timedelta
-from jose import jwt
+import jwt  # PyJWT
 
 # ---------------------------------------------------------------------------
-# MockSupabase – in-memory stand-in for the Supabase client
+# MockSupabase-style – in-memory stand-in for the database client
 # ---------------------------------------------------------------------------
 
 class MockTable:
@@ -192,7 +191,7 @@ class MockSupabase:
 _sentinel_db = MockSupabase()
 
 import app.db as _db_module
-_db_module.supabase = _sentinel_db
+_db_module.db = _sentinel_db
 
 from app.main import app
 from app.config import settings
@@ -204,18 +203,15 @@ import app.services.notification_service as _n_s
 import app.services.reminder_service as _rem_s
 import app.api.deps as _deps_m
 
-TEST_DB_DSN = "host=127.0.0.1 port=5433 dbname=gatepass_test user=prashant"
-
-
 def _patch_all(instance):
-    """Point every service module's supabase reference at `instance`."""
-    _db_module.supabase = instance
-    _u_s.supabase = instance
-    _r_s.supabase = instance
-    _g_s.supabase = instance
-    _n_s.supabase = instance
-    _rem_s.supabase = instance
-    _deps_m.supabase = instance
+    """Point every service module's db reference at `instance`."""
+    _db_module.db = instance
+    _u_s.db = instance
+    _r_s.db = instance
+    _g_s.db = instance
+    _n_s.db = instance
+    _rem_s.db = instance
+    _deps_m.db = instance
 
 
 def _build_fresh_db():
@@ -297,14 +293,13 @@ def _build_fresh_db():
     return db
 
 
-JWT_SECRET = settings.jwt_secret or "your-supabase-jwt-secret"
+JWT_SECRET = settings.jwt_secret or "test-secret"
 
 
 def make_jwt(user_id, expired=False, secret=JWT_SECRET):
     exp = datetime.now(timezone.utc) + (timedelta(hours=-1) if expired else timedelta(hours=2))
     payload = {
         "sub": user_id,
-        "aud": "authenticated",
         "exp": int(exp.timestamp()),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
@@ -322,7 +317,7 @@ def mock_db():
     all service modules. Tests should receive this fixture rather than
     importing mock_db at module level, to avoid stale-reference bugs.
     """
-    return _r_s.supabase  # after setup_test_db runs, all modules point here
+    return _r_s.db  # after setup_test_db runs, all modules point here
 
 
 @pytest.fixture(autouse=True)
@@ -356,14 +351,6 @@ def auth_headers(setup_test_db):
         token = make_jwt(uid)
         return {"Authorization": f"Bearer {token}"}
     return _headers
-
-
-@pytest.fixture
-def db_conn():
-    conn = psycopg2.connect(TEST_DB_DSN)
-    conn.autocommit = True
-    yield conn
-    conn.close()
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ with the same (user_id, type, related_id) already exists (deduplication).
 """
 
 from datetime import datetime, timezone, timedelta
-from app.db import supabase
+from app.db import db
 
 
 _EXPIRY_WARN_WINDOW = timedelta(hours=2)
@@ -32,7 +32,7 @@ def _parse_iso(dt_str: str | None) -> datetime | None:
 def _dedup_key_exists(user_id: str, notif_type: str, related_id: str) -> bool:
     """Return True if an unread notification with this key already exists."""
     res = (
-        supabase.table("notifications")
+        db.table("notifications")
         .select("id")
         .eq("user_id", user_id)
         .eq("type", notif_type)
@@ -47,7 +47,7 @@ def _send_reminder(user_id: str, title: str, message: str, notif_type: str, rela
     """Insert reminder only if no duplicate exists."""
     if _dedup_key_exists(user_id, notif_type, related_id):
         return False
-    supabase.table("notifications").insert({
+    db.table("notifications").insert({
         "user_id": user_id,
         "title": title,
         "message": message,
@@ -74,12 +74,12 @@ def generate_reminders(now: datetime | None = None) -> int:
 
     # --- Fetch data once ---
     approved_res = (
-        supabase.table("gatepass_requests").select("*").eq("status", "approved").execute()
+        db.table("gatepass_requests").select("*").eq("status", "approved").execute()
     )
     approved = approved_res.data or []
 
     pending_res = (
-        supabase.table("gatepass_requests").select("*").eq("status", "pending").execute()
+        db.table("gatepass_requests").select("*").eq("status", "pending").execute()
     )
     pending = pending_res.data or []
 
@@ -87,7 +87,7 @@ def generate_reminders(now: datetime | None = None) -> int:
     logs_by_req: dict[str, list[dict]] = {}
     if all_req_ids:
         logs_res = (
-            supabase.table("gate_logs")
+            db.table("gate_logs")
             .select("request_id,direction")
             .in_("request_id", all_req_ids)
             .execute()
@@ -97,9 +97,9 @@ def generate_reminders(now: datetime | None = None) -> int:
             logs_by_req.setdefault(rid, []).append(log)
 
     # Collect HR and Admin user IDs for rule 4
-    hr_res = supabase.table("users").select("id").eq("role", "hr").execute()
+    hr_res = db.table("users").select("id").eq("role", "hr").execute()
     hr_ids = [u["id"] for u in (hr_res.data or [])]
-    admin_res = supabase.table("users").select("id").eq("role", "admin").execute()
+    admin_res = db.table("users").select("id").eq("role", "admin").execute()
     admin_ids = [u["id"] for u in (admin_res.data or [])]
 
     # --- Rule 1 & 2: Vendor/Visitor still inside ---
@@ -168,7 +168,7 @@ def generate_reminders(now: datetime | None = None) -> int:
             continue
         req_type = req.get("type")
         requester_res = (
-            supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute()
+            db.table("users").select("role").eq("id", req["requester_id"]).single().execute()
         )
         requester = requester_res.data
         if not requester:

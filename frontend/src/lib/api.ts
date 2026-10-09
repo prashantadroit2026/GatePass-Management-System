@@ -1,25 +1,47 @@
 /**
  * API client — wraps fetch with Bearer token and base URL.
- * All data now comes from the FastAPI backend (real Supabase DB).
+ * All data comes from the FastAPI backend (Cloudflare D1 database).
+ * Auth tokens are issued by the backend's /auth/login endpoint and kept
+ * in localStorage.
  */
-import { supabase } from "@/lib/supabase";
 
 // Default: same-origin relative path — on Vercel, /api/* is rewritten to the
 // backend service. Set NEXT_PUBLIC_API_URL to override (e.g. local dev).
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
-async function getToken(): Promise<string | null> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return session?.access_token ?? null;
+const TOKEN_KEY = "gatepass_token";
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function setToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// ---- Tiny auth event bus (replaces supabase.auth.onAuthStateChange) ----
+type AuthEvent = "SIGNED_IN" | "SIGNED_OUT";
+type AuthListener = (event: AuthEvent, session: LocalSession | null) => void;
+const authListeners = new Set<AuthListener>();
+
+function emitAuth(event: AuthEvent, session: LocalSession | null) {
+  authListeners.forEach((cb) => cb(event, session));
+}
+
+export interface LocalSession {
+  access_token: string;
 }
 
 async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = await getToken();
+  const token = getToken();
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
@@ -44,14 +66,49 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
-// ---- Auth helpers (supabase direct) ----
+// ---- Auth helpers (backend /auth/login) ----
+export interface LoginResponse {
+  token: string;
+  expires_in: number;
+  user: ApiUser;
+}
+
 export const authApi = {
-  signIn: (email: string, password: string) =>
-    supabase.auth.signInWithPassword({ email, password }),
-  signOut: () => supabase.auth.signOut(),
-  getSession: () => supabase.auth.getSession(),
-  onAuthStateChange: (cb: Parameters<typeof supabase.auth.onAuthStateChange>[0]) =>
-    supabase.auth.onAuthStateChange(cb),
+  signIn: async (email: string, password: string) => {
+    try {
+      const res = await apiFetch<LoginResponse>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      setToken(res.token);
+      const session: LocalSession = { access_token: res.token };
+      emitAuth("SIGNED_IN", session);
+      return { error: null as { message: string } | null };
+    } catch (err) {
+      return {
+        error: { message: err instanceof Error ? err.message : "Sign-in failed" },
+      };
+    }
+  },
+
+  signOut: async () => {
+    clearToken();
+    emitAuth("SIGNED_OUT", null);
+  },
+
+  getSession: async () => {
+    const token = getToken();
+    return {
+      data: { session: token ? ({ access_token: token } as LocalSession) : null },
+    };
+  },
+
+  onAuthStateChange: (cb: AuthListener) => {
+    authListeners.add(cb);
+    return {
+      data: { subscription: { unsubscribe: () => authListeners.delete(cb) } },
+    };
+  },
 };
 
 // ---- Users ----

@@ -1,17 +1,12 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-supabase
 python-dotenv==1.0.1
 pydantic[email]==2.9.2
 pydantic-settings==2.5.2
-# PyJWT is used directly by app/api/deps.py (jwt.decode, PyJWKClient).
-# It currently installs transitively via supabase's gotrue, but pin it
-# explicitly so the app never breaks if that transitive dependency changes.
-PyJWT[crypto]>=2.8.0
-httpx
+# JWT signing/verification for the /auth/login flow (HS256).
+PyJWT>=2.8.0
+httpx==0.27.2
 email-validator==2.2.0
 
 # --- Test dependencies (backend/tests) ---
 pytest
-psycopg2-binary
-python-jose[cryptography]==3.3.0

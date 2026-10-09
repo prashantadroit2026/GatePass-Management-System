@@ -1,33 +1,18 @@
-import base64
-import json
 import jwt
-from jwt.exceptions import PyJWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.db import supabase
+from app.db import db
 from app.config import settings
 from app.core.rbac import has_permission, Permission, Role
 from typing import Annotated
 
 security = HTTPBearer(auto_error=False)
 
-_jwk_client: jwt.PyJWKClient | None = None
-
-
-def get_jwk_client() -> jwt.PyJWKClient:
-    global _jwk_client
-    if _jwk_client is None:
-        jwks_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
-        _jwk_client = jwt.PyJWKClient(jwks_url)
-    return _jwk_client
-
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security)
 ) -> dict:
-    """
-    Validate Supabase JWT and return the user row from public.users
-    """
+    """Validate the JWT issued by /auth/login and return the user row."""
     if credentials is None or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -37,75 +22,37 @@ async def get_current_user(
 
     token = credentials.credentials
 
+    if not settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="JWT secret is not configured",
+        )
+
     try:
-        header_b64 = token.split(".")[0]
-        padded_b64 = header_b64 + "=" * (-len(header_b64) % 4)
-        header = json.loads(base64.urlsafe_b64decode(padded_b64).decode("utf-8"))
-        alg = header.get("alg", "HS256")
-    except Exception:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if alg not in ("RS256", "ES256", "HS256"):
+    user_id: str | None = payload.get("sub")
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    try:
-        if alg == "HS256":
-            if not settings.jwt_secret:
-                # Refuse to verify HS256 tokens when no secret is configured —
-                # verifying against an empty key would let anyone forge tokens.
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="JWT secret is not configured",
-                )
-            payload = jwt.decode(
-                token,
-                settings.jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated",
-            )
-        else:
-            jwk_client = get_jwk_client()
-            signing_key = jwk_client.get_signing_key_from_jwt(token)
-            # Only allow the asymmetric algorithm(s) here. Including HS256
-            # would enable an algorithm-confusion attack (signing with the
-            # public JWKS key treated as an HMAC secret).
-            payload = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["RS256", "ES256"],
-                audience="authenticated",
-            )
-
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Fetch full user profile
-    try:
-        response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-        user = response.data
-    except Exception:
-        user = None
+    res = db.table("users").select("*").eq("id", user_id).single().execute()
+    user = res.data
 
     if not user:
         raise HTTPException(
@@ -121,7 +68,7 @@ async def get_current_user(
 async def get_optional_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict | None:
-    """Validate Supabase JWT if present; return None if unauthenticated or invalid"""
+    """Validate the JWT if present; return None if unauthenticated or invalid"""
     if credentials is None or not credentials.credentials:
         return None
     try:
@@ -144,4 +91,3 @@ def require_permission(permission: Permission):
 
 # Convenient typed dependency
 CurrentUser = Annotated[dict, Depends(get_current_user)]
-
