@@ -1,10 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.schemas.user import UserCreate, UserUpdate, UserPasswordUpdate, UserOut
+from app.schemas.user import UserCreate, UserUpdate, UserPasswordUpdate, UserOut, UserImport
 from app.services import user_service
 from app.api.deps import get_current_user, require_permission
 from app.core.rbac import Permission
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+@router.post("/import", response_model=List[UserOut], status_code=status.HTTP_201_CREATED)
+async def import_users(
+    file: bytes = ...,
+    current_user: dict = Depends(require_permission(Permission.MANAGE_USER_ACCOUNTS)),
+):
+    """Import users from Excel file (.xlsx/.xls).
+    Expected columns: name, email, password, role
+    Role values: employee, hr, admin, vendor
+    """
+    import_str = base64.b64decode(file).decode("utf-8")
+    # In a real implementation, we would use openpyxl or xlsx to parse the file
+    # For now, we'll raise a not implemented error until the library is available
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Excel import library not yet configured - use individual user creation for now"
+    )
 
 
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)

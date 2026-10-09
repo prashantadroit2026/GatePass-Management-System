@@ -1,5 +1,7 @@
+import base64
+from io import BytesIO
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from app.core.rbac import Role
 
@@ -34,3 +36,7 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserImport(BaseModel):
+    users: List[UserCreate]

@@ -9,8 +9,11 @@ import {
   Save,
   Eye,
   EyeOff,
+  FileText,
+  Upload,
 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { useApp } from "@/context/app-context";
 import { DEPARTMENTS, ROLE_META } from "@/lib/constants";
@@ -19,13 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { AddUserForm } from "@/components/admin/add-user-form";
 import { useSimulatedLoad } from "@/hooks/use-app";
 import type { AppUser, Role } from "@/types";
+import { useApi } from "@/lib/api";
 
 export default function UsersPage() {
   const { users, currentUser, updateUser, updateUserPassword, deleteUser } = useApp();
@@ -36,6 +40,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [passwordUser, setPasswordUser] = useState<AppUser | null>(null);
   const [deletingUser, setDeletingUser] = useState<AppUser | null>(null);
+  const [importingUser, setImportingUser] = useState<boolean>(false);
 
   // Edit User Form state
   const [editName, setEditName] = useState("");
@@ -165,6 +170,30 @@ export default function UsersPage() {
     }
   };
 
+  const handleImportSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) {
+      toast.error("Please select an Excel file");
+      return;
+    }
+    setImportingUser(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await supabase.from("users").insert([]);
+      toast.error("Import temporarily disabled", {
+        description: "Use individual user creation until Excel import library is configured",
+      });
+    } catch (err: unknown) {
+      toast.error("Import failed", {
+        description: err instanceof Error ? err.message : "Unknown error occurred",
+      });
+    } finally {
+      setImportingUser(false);
+    }
+  };
+
   const columns: Column<AppUser>[] = [
     {
       key: "name",
@@ -259,6 +288,7 @@ export default function UsersPage() {
       <div className="grid gap-6 xl:grid-cols-12">
         <div className="xl:col-span-4">
           <AddUserForm />
+          <ImportUsersModal />
         </div>
 
         <div className="xl:col-span-8">
@@ -453,9 +483,52 @@ export default function UsersPage() {
             </div>
           </form>
         )}
-      </Modal>
+        {/* Import Users Modal */}
+        <Modal
+          open={importingUser}
+          onClose={() => setImportingUser(false)}
+          title="Import Users from Excel"
+          size="lg"
+        >
+          {importingUser && (
+            <form onSubmit={handleImportSubmit} className="space-y-4 p-6">
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="block cursor-pointer px-4 py-2 border border-slate-300 rounded-md shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  onChange={(e) => setFile(e.target.files?.[0])}
+                />
+                <span className="text-sm text-slate-500">
+                  Select xlsx or xls file with columns: name, email, password, role
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Employee IDs will be assigned automatically from the admin side.
+              </p>
+              <div className="flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:justify-end">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setImportingUser(false)}
+                  disabled={importBusy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={importBusy}
+                  icon={<Save className="h-4 w-4" aria-hidden />}
+                >
+                  Import Users
+                </Button>
+              </div>
+            </form>
+          )}
+        </Modal>
+</div>
 
-      {/* Change Password Modal */}
+      <div className="xl:col-span-8">
       <Modal
         open={Boolean(passwordUser)}
         onClose={() => !passwordBusy && setPasswordUser(null)}
