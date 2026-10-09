@@ -1,25 +1,25 @@
 # Cloudflare & Cloud Deployment Guide
 
 This guide explains how to deploy the **Gatepass Management System**:
-1. **Frontend (Next.js)** to **Cloudflare Pages**
+1. **Frontend (Next.js)** to **Cloudflare Workers** (via OpenNext)
 2. **Backend (FastAPI)** to **Render / Railway / Fly.io** (or Docker)
 3. **Database** on **Supabase**
 
 ---
 
-## 1. Deploy Frontend to Cloudflare Pages
+## 1. Deploy Frontend to Cloudflare Workers
 
-### Option A: Git Integration (Automatic CI/CD)
+The frontend uses the [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) adapter to run Next.js on Cloudflare Workers. Config files: `frontend/wrangler.jsonc` + `frontend/open-next.config.ts`.
 
-1. Push your repository to GitHub or GitLab.
-2. Go to the [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**.
-3. Click **Create Application** → **Pages** → **Connect to Git**.
-4. Select your repository and configure the build settings:
-   - **Framework Preset**: `Next.js`
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm run build`
-   - **Build Output Directory**: `.next`
-5. Set Environment Variables in Cloudflare Pages settings:
+### Option A: Git Integration (Workers Builds — Automatic CI/CD)
+
+1. In the Cloudflare Dashboard, open your Worker → **Settings** → **Build** → **Connect to Git** and select this repository.
+2. Configure the build commands:
+
+   - **Build command:** `cd frontend && npm install && npx opennextjs-cloudflare build`
+   - **Deploy command:** `cd frontend && npx wrangler deploy`
+
+3. Set Environment Variables (Build -> Variables, these are inlined at build time by Next.js):
    - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase URL
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon key
    - `NEXT_PUBLIC_API_URL`: Your deployed Backend API URL (e.g. `https://gatepass-api.onrender.com/api/v1`)
@@ -28,8 +28,9 @@ This guide explains how to deploy the **Gatepass Management System**:
 
 ```bash
 cd frontend
-npm install -g wrangler
-wrangler pages deploy .next --project-name=gatepass-frontend
+npm install
+npx opennextjs-cloudflare build   # runs next build + bundles the worker
+npx wrangler deploy
 ```
 
 ---

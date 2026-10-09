@@ -1,5 +1,0 @@
-name = "gatepass-management-system"
-compatibility_date = "2026-09-29"
-
-[assets]
-directory = "./dist" # Use "./build" if using Create React App

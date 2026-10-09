@@ -26,3 +26,7 @@ __pycache__/
 *.zip
 *.tar.gz
 *.log
+
+# OpenNext (Cloudflare) build output
+.open-next/
+.wrangler/
