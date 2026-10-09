@@ -34,7 +34,11 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.message ?? body?.detail ?? `API error ${res.status}`);
+    const error = new Error(
+      body?.message ?? body?.detail ?? `API error ${res.status}`,
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
   }
 
   return res.json() as Promise<T>;
@@ -116,7 +120,7 @@ export const notificationsApi = {
   markRead: (id: string) =>
     apiFetch<ApiNotification>(`/notifications/${id}/read`, { method: "PATCH" }),
   markAllRead: () =>
-    apiFetch<void>("/notifications/read-all", { method: "PATCH" }),
+    apiFetch<{ message: string }>("/notifications/read-all", { method: "POST" }),
 };
 
 // ---- Types ----

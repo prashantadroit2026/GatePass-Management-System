@@ -15,6 +15,7 @@ class RequestStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    EXPIRED = "expired"
 
 
 class ItemDirection(str, Enum):

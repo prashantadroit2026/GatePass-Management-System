@@ -58,6 +58,13 @@ async def get_current_user(
 
     try:
         if alg == "HS256":
+            if not settings.jwt_secret:
+                # Refuse to verify HS256 tokens when no secret is configured —
+                # verifying against an empty key would let anyone forge tokens.
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="JWT secret is not configured",
+                )
             payload = jwt.decode(
                 token,
                 settings.jwt_secret,
@@ -67,10 +74,13 @@ async def get_current_user(
         else:
             jwk_client = get_jwk_client()
             signing_key = jwk_client.get_signing_key_from_jwt(token)
+            # Only allow the asymmetric algorithm(s) here. Including HS256
+            # would enable an algorithm-confusion attack (signing with the
+            # public JWKS key treated as an HMAC secret).
             payload = jwt.decode(
                 token,
                 signing_key.key,
-                algorithms=["RS256", "ES256", "HS256"],
+                algorithms=["RS256", "ES256"],
                 audience="authenticated",
             )
 

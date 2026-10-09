@@ -145,7 +145,7 @@ export function VisitorPassForm() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Visit date" htmlFor="v-date" required error={errors.date}>
-              <Input id="v-date" type="date" value={form.date} min={todayISO()} onChange={(e) => set("date", e.target.value)} />
+              <Input id="v-date" type="date" min={todayISO()} value={form.date} onChange={(e) => set("date", e.target.value)} />
             </Field>
             <Field label="Time slot" htmlFor="v-slot" required>
               <Select id="v-slot" value={form.timeSlot} onChange={(e) => set("timeSlot", e.target.value)}>

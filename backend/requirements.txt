@@ -4,7 +4,14 @@ supabase
 python-dotenv==1.0.1
 pydantic[email]==2.9.2
 pydantic-settings==2.5.2
-python-jose[cryptography]==3.3.0
+# PyJWT is used directly by app/api/deps.py (jwt.decode, PyJWKClient).
+# It currently installs transitively via supabase's gotrue, but pin it
+# explicitly so the app never breaks if that transitive dependency changes.
+PyJWT[crypto]>=2.8.0
 httpx
 email-validator==2.2.0
 
+# --- Test dependencies (backend/tests) ---
+pytest
+psycopg2-binary
+python-jose[cryptography]==3.3.0

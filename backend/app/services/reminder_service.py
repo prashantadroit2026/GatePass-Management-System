@@ -125,6 +125,8 @@ def generate_reminders(now: datetime | None = None) -> int:
                         total += 1
             else:  # visitor
                 # Notify requester (employee who raised it)
+                if not req.get("requester_id"):
+                    continue
                 ok = _send_reminder(
                     user_id=req["requester_id"],
                     title="Visitor Still Inside",
@@ -142,6 +144,8 @@ def generate_reminders(now: datetime | None = None) -> int:
         if valid_until is None:
             continue
         if now < valid_until <= warn_threshold:
+            if not req.get("requester_id"):
+                continue
             ok = _send_reminder(
                 user_id=req["requester_id"],
                 title="Gatepass Expiring Soon",
@@ -160,6 +164,8 @@ def generate_reminders(now: datetime | None = None) -> int:
         if now - created_at < _PENDING_WARN_AFTER:
             continue
 
+        if not req.get("requester_id"):
+            continue
         req_type = req.get("type")
         requester_res = (
             supabase.table("users").select("role").eq("id", req["requester_id"]).single().execute()

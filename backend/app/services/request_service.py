@@ -120,6 +120,15 @@ def create_vendor_request(requester: dict | None, data: dict) -> dict:
     valid_from, valid_until = _calculate_validity("vendor")
 
     requester_id = requester["id"] if requester else None
+    if requester_id is None:
+        # requester_id is NOT NULL in the DB — resolve the fallback system
+        # user up-front so we never attempt an insert with a NULL value.
+        requester_id = _get_default_system_user_id()
+        if requester_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No system user available for unauthenticated vendor requests",
+            )
     notes = data.get("notes")
 
     # Serialize extra scheduling fields if provided
@@ -150,15 +159,7 @@ def create_vendor_request(requester: dict | None, data: dict) -> dict:
     try:
         res = supabase.table("gatepass_requests").insert(payload).execute()
     except Exception as e:
-        if requester_id is None:
-            sys_id = _get_default_system_user_id()
-            if sys_id:
-                payload["requester_id"] = sys_id
-                res = supabase.table("gatepass_requests").insert(payload).execute()
-            else:
-                raise e
-        else:
-            raise e
+        raise e
 
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to create vendor request")
@@ -329,7 +330,7 @@ def cancel_request(request_id: str, user: dict, notes: str | None = None) -> dic
     is_requester = req.get("requester_id") == user["id"]
     is_approver_role = user["role"] in ("hr", "admin")
 
-    if not (is_requester or is_approver_role or req.get("type") == "vendor"):
+    if not (is_requester or is_approver_role):
         raise HTTPException(status_code=403, detail="Not allowed to cancel this request")
 
     update = {

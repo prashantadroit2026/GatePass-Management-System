@@ -380,15 +380,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, [profile]);
 
+  // Load on first boot and whenever the signed-in user changes (re-login),
+  // so a different user never sees the previous user's cached data.
   useEffect(() => {
-    if (!profile || bootedRef.current) return;
-    bootedRef.current = true;
+    if (!profile) return;
     loadAll();
-  }, [profile, loadAll]);
-
-  // Re-load when profile changes (e.g. re-login)
-  useEffect(() => {
-    bootedRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
   const reloadRequests = useCallback(async () => {

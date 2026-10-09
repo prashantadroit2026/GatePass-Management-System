@@ -65,8 +65,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await usersApi.me();
       setProfile(me);
-    } catch {
+    } catch (err) {
       setProfile(null);
+      // If the backend rejected our token (expired JWT / deactivated or
+      // deleted user), drop the stale session too — otherwise the app is
+      // stuck with a session but no profile and keeps bouncing to /login.
+      const status = (err as Error & { status?: number }).status;
+      if (status === 401 || status === 403) {
+        setSession(null);
+        setUser(null);
+        await authApi.signOut().catch(() => {});
+      }
     }
   }, []);
 

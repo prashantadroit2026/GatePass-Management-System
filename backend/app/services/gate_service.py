@@ -183,7 +183,7 @@ def get_accepted_list(
     requests = res.data or []
 
     # Resolve requester names in one pass
-    user_ids = list({r["requester_id"] for r in requests})
+    user_ids = list({r["requester_id"] for r in requests if r.get("requester_id")})
     users_map: dict[str, str] = {}
     if user_ids:
         users_res = supabase.table("users").select("id,name").in_("id", user_ids).execute()
