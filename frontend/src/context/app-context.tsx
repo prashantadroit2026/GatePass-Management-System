@@ -529,9 +529,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const recordGateMovement = useCallback(
     async (id: string, kind: "check_in" | "check_out") => {
+      const req = await requestsApi.get(id);
+      const reqType = req.type;
+      let direction: "in" | "out";
+
+      if (reqType === "leave") {
+        const logCount = (await gateApi.logs(id)).length;
+        direction = logCount === 0 ? "out" : "in";
+      } else {
+        // visitor or vendor: IN first, then OUT
+        direction = kind === "check_in" ? "in" : "out";
+      }
+
       const log = await gateApi.log({
         request_id: id,
-        direction: kind === "check_in" ? "in" : "out",
+        direction,
       });
       setRawLogs((prev) => [...prev, log]);
     },
