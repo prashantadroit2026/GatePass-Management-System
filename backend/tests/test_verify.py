@@ -108,7 +108,7 @@ def test_approval_matrix_parametrize(api_client, mock_db, req_role, app_role, ac
     allowed = (
         not is_self and (
             (app_role == "hr" and req_role in ("employee", "vendor")) or
-            (app_role == "admin" and req_role == "hr")
+            (app_role == "admin" and req_role in ("employee", "vendor", "hr", "admin"))
         )
     )
 

@@ -34,16 +34,17 @@ def can_decide(approver: dict, requester: dict | None) -> None:
     req_role = requester.get("role") if requester else "vendor"
     appr_role = approver.get("role")
     if req_role in ("employee", "vendor"):
-        if appr_role != "hr":
+        if appr_role not in ("hr", "admin"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Employee and vendor requests can only be approved or rejected by HR"
+                detail="Employee and vendor requests can only be approved or rejected by HR or Admin"
             )
-    elif req_role == "hr":
+    elif req_role in ("hr", "admin"):
+        # HR requests need Admin; Admin's own requests need another Admin
         if appr_role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="HR requests can only be approved or rejected by Admin"
+                detail="HR and Admin requests can only be approved or rejected by Admin"
             )
     else:
         raise HTTPException(
